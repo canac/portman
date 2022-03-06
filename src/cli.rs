@@ -38,4 +38,7 @@ pub enum Cli {
 
     #[structopt(about = "Reset all of the port assignments")]
     Reset,
+
+    #[structopt(about = "Print the generated Caddyfile for the assigned ports")]
+    Caddyfile,
 }

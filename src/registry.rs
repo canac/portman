@@ -58,6 +58,11 @@ impl PortRegistry {
         }
     }
 
+    // Return a reference to all the ports in the registry
+    pub fn get_all(&self) -> &HashMap<String, u16> {
+        &self.ports
+    }
+
     // Release a project's port from the registry
     // Return an option with the removed port if the project existed, none if it didn't
     pub fn release(&mut self, project: &str) -> Result<Option<u16>, ApplicationError> {

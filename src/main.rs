@@ -38,6 +38,22 @@ fn run() -> Result<(), ApplicationError> {
             let empty_registry = PortRegistry::default();
             empty_registry.save()?;
         }
+
+        Cli::Caddyfile => {
+            let registry = PortRegistry::load()?;
+            let caddyfile = registry
+                .get_all()
+                .iter()
+                .map(|(project, port)| {
+                    format!(
+                        "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",
+                        project, port
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            print!("{}", caddyfile);
+        }
     }
 
     Ok(())
