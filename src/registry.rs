@@ -46,12 +46,12 @@ impl PortRegistry {
     }
 
     // Get a port from the registry
-    pub fn get(&mut self, project: String) -> Result<u16, ApplicationError> {
-        match self.ports.get(&project) {
+    pub fn get(&mut self, project: &str) -> Result<u16, ApplicationError> {
+        match self.ports.get(project) {
             Some(&port) => Ok(port),
             None => {
                 let new_port = self.generate_port()?;
-                self.ports.insert(project, new_port);
+                self.ports.insert(project.to_string(), new_port);
                 self.save()?;
                 Ok(new_port)
             }

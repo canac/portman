@@ -21,7 +21,7 @@ fn run() -> Result<(), ApplicationError> {
         },
 
         Cli::Get { project_name } => {
-            println!("{}", get_port(project_name)?);
+            println!("{}", get_port(&project_name)?);
         }
 
         Cli::Release { project_name } => {
