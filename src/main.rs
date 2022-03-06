@@ -16,12 +16,22 @@ fn run() -> Result<(), ApplicationError> {
     match cli {
         Cli::Init { shell } => match shell {
             InitShell::Fish => {
-                println!("{}", init_fish())
+                println!("{}", init_fish());
             }
         },
 
         Cli::Get { project_name } => {
             println!("{}", get_port(project_name)?);
+        }
+
+        Cli::Release { project_name } => {
+            let mut registry = PortRegistry::load()?;
+            if let Some(port) = registry.release(&project_name)? {
+                println!("Removed project {} with port {}", project_name, port);
+            } else {
+                println!("Project {} does not exist", project_name);
+                std::process::exit(1);
+            }
         }
 
         Cli::Reset => {

@@ -30,6 +30,12 @@ pub enum Cli {
         project_name: String,
     },
 
+    #[structopt(about = "Release an assigned port")]
+    Release {
+        #[structopt(about = "The name of the project to release")]
+        project_name: String,
+    },
+
     #[structopt(about = "Reset all of the port assignments")]
     Reset,
 }

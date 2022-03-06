@@ -58,6 +58,16 @@ impl PortRegistry {
         }
     }
 
+    // Release a project's port from the registry
+    // Return an option with the removed port if the project existed, none if it didn't
+    pub fn release(&mut self, project: &str) -> Result<Option<u16>, ApplicationError> {
+        let removed = self.ports.remove(project);
+        if removed.is_some() {
+            self.save()?;
+        }
+        Ok(removed)
+    }
+
     // Return the path to the persisted registry file
     fn get_registry_path() -> Result<PathBuf, ApplicationError> {
         let project_dirs =
