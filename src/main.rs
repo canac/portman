@@ -1,7 +1,10 @@
 mod cli;
+mod get;
 mod init;
+mod registry;
 
 use crate::cli::{Cli, InitShell};
+use crate::get::get_port;
 use crate::init::init_fish;
 use structopt::StructOpt;
 
@@ -13,5 +16,9 @@ fn main() {
                 println!("{}", init_fish())
             }
         },
+
+        Cli::Get { project_name } => {
+            println!("{}", get_port(project_name));
+        }
     }
 }

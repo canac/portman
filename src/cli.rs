@@ -23,4 +23,10 @@ pub enum Cli {
         )]
         shell: InitShell,
     },
+
+    #[structopt(about = "Print the port for a project")]
+    Get {
+        #[structopt(about = "The name of the project to get a port for")]
+        project_name: String,
+    },
 }
