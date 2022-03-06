@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-#[derive(Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct PortRegistry {
     ports: HashMap<String, u16>,
 }
