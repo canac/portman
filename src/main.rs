@@ -1,78 +1,79 @@
 mod cli;
 mod config;
 mod error;
-mod get;
 mod init;
 mod registry;
 
-use crate::cli::{Cli, InitShell, Sync};
-use crate::get::get_port;
+use crate::cli::{Cli, InitShell};
+use crate::error::ApplicationError;
 use crate::init::init_fish;
 use crate::registry::PortRegistry;
-use error::ApplicationError;
+use regex::Regex;
 use structopt::StructOpt;
+
+// Extract the name of the project using the git repo in the current directory
+fn extract_project_name() -> Result<String, ApplicationError> {
+    let stdout = std::process::Command::new("git")
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .map_err(ApplicationError::ExecGit)?
+        .stdout;
+    let repo = std::str::from_utf8(&stdout)
+        .map_err(ApplicationError::ReadGitStdout)?
+        .trim_end();
+    lazy_static::lazy_static! {
+        static ref RE: Regex =
+            Regex::new(r"^https://github\.com/(?:.+)/(?P<project>.+?)(?:\.git)?$").unwrap();
+    }
+    let cap = RE.captures(repo).ok_or(ApplicationError::ExtractProject)?;
+    Ok(cap
+        .name("project")
+        .ok_or(ApplicationError::ExtractProject)?
+        .as_str()
+        .to_string())
+}
+
+// Get the project name using the name provided on the cli if present,
+// defaulting to extracting it from the git repo in the current directory
+fn get_project_name(cli_project_name: Option<String>) -> Result<String, ApplicationError> {
+    Ok(match cli_project_name {
+        Some(project) => project,
+        None => extract_project_name()?,
+    })
+}
 
 fn run() -> Result<(), ApplicationError> {
     let cli = Cli::from_args();
     match cli {
         Cli::Init { shell } => match shell {
             InitShell::Fish => {
-                println!("{}", init_fish());
+                println!("{}", init_fish())
             }
         },
 
         Cli::Get { project_name } => {
-            println!("{}", get_port(&project_name)?);
+            let project = get_project_name(project_name)?;
+            let mut registry = PortRegistry::load()?;
+            println!("{}", registry.get(project.as_str())?)
+        }
+
+        Cli::Allocate { project_name } => {
+            let project = get_project_name(project_name)?;
+            let mut registry = PortRegistry::load()?;
+            let port = registry.allocate(project.as_str())?;
+            println!("Allocated port {} for project {}\n\nThe PORT environment variable will now be automatically set whenever this git repo is cd-ed into from an initialized shell.\nRun `cd .` to manually set the PORT now.", port, project)
         }
 
         Cli::Release { project_name } => {
+            let project = get_project_name(project_name)?;
             let mut registry = PortRegistry::load()?;
-            if let Some(port) = registry.release(&project_name)? {
-                println!("Removed project {} with port {}", project_name, port);
-            } else {
-                println!("Project {} does not exist", project_name);
-                std::process::exit(1);
-            }
+            let port = registry.release(project.as_str())?;
+            println!("Released port {} for project {}\n\nRun `cd .` to manually remove the PORT environment variable.", port, project);
         }
 
         Cli::Reset => {
             let empty_registry = PortRegistry::default();
             empty_registry.save()?;
-        }
-
-        Cli::Sync(subcommand) => {
-            let working_dir =
-                std::env::current_dir().map_err(|_| ApplicationError::CurrentDirectory)?;
-            let mut registry = PortRegistry::load()?;
-            match subcommand {
-                Sync::Start => {
-                    if registry.add_sync_dir(working_dir)? {
-                        println!("Current directory is now being synced\n\nRun `cd .` to update the PORT environment variable.");
-                        std::process::exit(0);
-                    } else {
-                        println!("Current directory was already being synced");
-                        std::process::exit(1);
-                    }
-                }
-                Sync::Stop => {
-                    if registry.remove_sync_dir(&working_dir)? {
-                        println!("Current directory is no longer being synced\n\nRun `cd .` to update the PORT environment variable.");
-                        std::process::exit(0);
-                    } else {
-                        println!("Current directory was already not being synced");
-                        std::process::exit(1);
-                    }
-                }
-                Sync::Check => {
-                    if registry.check_dir_synced(&working_dir) {
-                        println!("Current directory is being synced");
-                        std::process::exit(0);
-                    } else {
-                        println!("Current directory is not being synced");
-                        std::process::exit(1);
-                    }
-                }
-            }
         }
 
         Cli::Caddyfile => {
@@ -97,7 +98,7 @@ fn run() -> Result<(), ApplicationError> {
 
 fn main() {
     if let Err(err) = run() {
-        println!("{}", err);
+        eprintln!("{}", err);
         std::process::exit(1);
     }
 }

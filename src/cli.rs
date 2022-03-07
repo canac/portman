@@ -8,21 +8,9 @@ pub enum InitShell {
 }
 
 #[derive(StructOpt)]
-pub enum Sync {
-    #[structopt(about = "Start syncing the current directory")]
-    Start,
-
-    #[structopt(about = "Stop syncing the current directory")]
-    Stop,
-
-    #[structopt(about = "Check whether the current directory is being synced")]
-    Check,
-}
-
-#[derive(StructOpt)]
 #[structopt(
     name = "portman",
-    about = "Manage local port assignments",
+    about = "Manage local port allocations",
     version = "0.1.0",
     author = "Caleb Cox"
 )]
@@ -36,24 +24,33 @@ pub enum Cli {
         shell: InitShell,
     },
 
-    #[structopt(about = "Print the port for a project")]
+    #[structopt(about = "Print the port allocated for a project")]
     Get {
-        #[structopt(about = "The name of the project to get a port for")]
-        project_name: String,
+        #[structopt(
+            about = "The name of the project to get a port for (defaults to the current git project name)"
+        )]
+        project_name: Option<String>,
     },
 
-    #[structopt(about = "Release an assigned port")]
+    #[structopt(about = "Allocate a port for a new project")]
+    Allocate {
+        #[structopt(
+            about = "The name of the project to allocate a port for (defaults to the current git project name)"
+        )]
+        project_name: Option<String>,
+    },
+
+    #[structopt(about = "Release an allocated port")]
     Release {
-        #[structopt(about = "The name of the project to release")]
-        project_name: String,
+        #[structopt(
+            about = "The name of the project to release (defaults to the current git project name)"
+        )]
+        project_name: Option<String>,
     },
 
     #[structopt(about = "Reset all of the port assignments")]
     Reset,
 
-    #[structopt(about = "Manage synced directories")]
-    Sync(Sync),
-
-    #[structopt(about = "Print the generated Caddyfile for the assigned ports")]
+    #[structopt(about = "Print the generated Caddyfile for the allocated ports")]
     Caddyfile,
 }

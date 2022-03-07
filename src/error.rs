@@ -6,9 +6,6 @@ pub enum ApplicationError {
     #[error("Couldn't determine application directories")]
     ProjectDirs,
 
-    #[error("Couldn't determine current directory")]
-    CurrentDirectory,
-
     #[error("Couldn't read port registry file \"{path}\"\nError: {io_err}")]
     ReadRegistry {
         path: PathBuf,
@@ -36,6 +33,21 @@ pub enum ApplicationError {
     #[error("Config validation error: {0}")]
     ValidateConfig(String),
 
+    #[error("Project \"{0}\" already exists")]
+    DuplicateProject(String),
+
+    #[error("Project \"{0}\" does not exist")]
+    NonExistentProject(String),
+
     #[error("All available ports have been allocated already")]
     AllPortsAllocated,
+
+    #[error("Error executing git command\nError: {0}")]
+    ExecGit(std::io::Error),
+
+    #[error("Error reading git output\nError: {0}")]
+    ReadGitStdout(std::str::Utf8Error),
+
+    #[error("Error extracting GitHub project name")]
+    ExtractProject,
 }

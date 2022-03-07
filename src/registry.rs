@@ -6,12 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct PortRegistry {
-    synced_dirs: HashSet<PathBuf>,
     ports: HashMap<String, u16>,
 }
 
@@ -49,22 +48,24 @@ impl PortRegistry {
         Ok(())
     }
 
-    // Get a port from the registry
+    // Get a a project's port from the registry_path
+    // A port is not generated if the project does not exist. However, if an
+    // existing project's port is invalid due to a configuration change, a new
+    // valid port is transparently generated.
     pub fn get(&mut self, project: &str) -> Result<u16, ApplicationError> {
         let config = Config::load()?;
-
-        match self.ports.get(project).and_then(|port| {
-            config
-                .get_valid_ports()
-                .find(|valid_port| valid_port == port)
-        }) {
-            // The project already has a port assigned, and it is valid, so use it
-            Some(port) => Ok(port),
-            None => {
-                let new_port = self.generate_port()?;
-                self.ports.insert(project.to_string(), new_port);
-                self.save()?;
-                Ok(new_port)
+        match self.ports.get(project) {
+            None => Err(ApplicationError::NonExistentProject(project.to_string())),
+            Some(&port) => {
+                if config.is_port_valid(port) {
+                    Ok(port)
+                } else {
+                    // Regenerate a valid port for this project
+                    let new_port = self.generate_port()?;
+                    self.ports.insert(project.to_string(), new_port);
+                    self.save()?;
+                    Ok(new_port)
+                }
             }
         }
     }
@@ -74,43 +75,27 @@ impl PortRegistry {
         &self.ports
     }
 
-    // Release a project's port from the registry
-    // Return an option with the removed port if the project existed, none if it didn't
-    pub fn release(&mut self, project: &str) -> Result<Option<u16>, ApplicationError> {
-        let removed = self.ports.remove(project);
-        if removed.is_some() {
+    // Allocate a port to a new project
+    pub fn allocate(&mut self, project: &str) -> Result<u16, ApplicationError> {
+        if self.ports.get(project).is_some() {
+            Err(ApplicationError::DuplicateProject(project.to_string()))
+        } else {
+            let new_port = self.generate_port()?;
+            self.ports.insert(project.to_string(), new_port);
             self.save()?;
+            Ok(new_port)
         }
-        Ok(removed)
     }
 
-    // When synced directories are cd-ed into, the PORT environment variable
-    // will be automatically set to the assigned port via the shell integration
-    // installed by the init script. This only happens to synced directories
-    // that are manually whitelisted.
-
-    // Start syncing a directory
-    pub fn add_sync_dir(&mut self, dir: PathBuf) -> Result<bool, ApplicationError> {
-        let added = self.synced_dirs.insert(dir);
-        if added {
-            self.save()?;
+    // Release a previously allocated project's port
+    pub fn release(&mut self, project: &str) -> Result<u16, ApplicationError> {
+        match self.ports.remove(project) {
+            Some(port) => {
+                self.save()?;
+                Ok(port)
+            }
+            None => Err(ApplicationError::NonExistentProject(project.to_string())),
         }
-        Ok(added)
-    }
-
-    // Stop syncing a directory
-    pub fn remove_sync_dir(&mut self, dir: &Path) -> Result<bool, ApplicationError> {
-        let removed = self.synced_dirs.remove(dir);
-        if removed {
-            self.save()?;
-        }
-        Ok(removed)
-    }
-
-    // Return a boolean indicating whether the directory is in the whitelist
-    // of directories that will have their PORT
-    pub fn check_dir_synced(&self, dir: &Path) -> bool {
-        self.synced_dirs.contains(dir)
     }
 
     // Return the path to the persisted registry file
