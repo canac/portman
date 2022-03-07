@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct PortRegistry {
+    synced_dirs: HashSet<PathBuf>,
     ports: HashMap<String, u16>,
 }
 
@@ -17,22 +18,24 @@ impl PortRegistry {
     // Load a port registry from the file
     pub fn load() -> Result<Self, ApplicationError> {
         let registry_path = Self::get_registry_path()?;
-        let registry_str =
-            fs::read_to_string(&registry_path).or_else(|io_err| match io_err.kind() {
+        match fs::read_to_string(&registry_path) {
+            Ok(registry_str) => {
+                toml::from_str(&registry_str).map_err(ApplicationError::DeserializeRegistry)
+            }
+            Err(io_err) => match io_err.kind() {
                 // If the file doesn't exist, give it a default value of an empty port registry
-                std::io::ErrorKind::NotFound => Ok("ports = {}".to_string()),
+                std::io::ErrorKind::NotFound => Ok(Self::default()),
                 _ => Err(ApplicationError::ReadRegistry {
-                    path: registry_path.clone(),
+                    path: registry_path,
                     io_err,
                 }),
-            })?;
-        toml::from_str(&registry_str).map_err(|_| ApplicationError::DeserializeRegistry)
+            },
+        }
     }
 
     // Save a port registry to the file
     pub fn save(&self) -> Result<(), ApplicationError> {
-        let registry_str =
-            toml::to_string(&self).map_err(|_| ApplicationError::SerializeRegistry)?;
+        let registry_str = toml::to_string(&self).map_err(ApplicationError::SerializeRegistry)?;
 
         let registry_path = Self::get_registry_path()?;
         let parent_dir = registry_path
@@ -71,6 +74,35 @@ impl PortRegistry {
             self.save()?;
         }
         Ok(removed)
+    }
+
+    // When synced directories are cd-ed into, the PORT environment variable
+    // will be automatically set to the assigned port via the shell integration
+    // installed by the init script. This only happens to synced directories
+    // that are manually whitelisted.
+
+    // Start syncing a directory
+    pub fn add_sync_dir(&mut self, dir: PathBuf) -> Result<bool, ApplicationError> {
+        let added = self.synced_dirs.insert(dir);
+        if added {
+            self.save()?;
+        }
+        Ok(added)
+    }
+
+    // Stop syncing a directory
+    pub fn remove_sync_dir(&mut self, dir: &Path) -> Result<bool, ApplicationError> {
+        let removed = self.synced_dirs.remove(dir);
+        if removed {
+            self.save()?;
+        }
+        Ok(removed)
+    }
+
+    // Return a boolean indicating whether the directory is in the whitelist
+    // of directories that will have their PORT
+    pub fn check_dir_synced(&self, dir: &Path) -> bool {
+        self.synced_dirs.contains(dir)
     }
 
     // Return the path to the persisted registry file

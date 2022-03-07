@@ -8,6 +8,18 @@ pub enum InitShell {
 }
 
 #[derive(StructOpt)]
+pub enum Sync {
+    #[structopt(about = "Start syncing the current directory")]
+    Start,
+
+    #[structopt(about = "Stop syncing the current directory")]
+    Stop,
+
+    #[structopt(about = "Check whether the current directory is being synced")]
+    Check,
+}
+
+#[derive(StructOpt)]
 #[structopt(
     name = "portman",
     about = "Manage local port assignments",
@@ -38,6 +50,9 @@ pub enum Cli {
 
     #[structopt(about = "Reset all of the port assignments")]
     Reset,
+
+    #[structopt(about = "Manage synced directories")]
+    Sync(Sync),
 
     #[structopt(about = "Print the generated Caddyfile for the assigned ports")]
     Caddyfile,
