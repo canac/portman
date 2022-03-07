@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod error;
 mod get;
 mod init;
@@ -96,6 +97,7 @@ fn run() -> Result<(), ApplicationError> {
 
 fn main() {
     if let Err(err) = run() {
-        println!("{}", err)
+        println!("{}", err);
+        std::process::exit(1);
     }
 }

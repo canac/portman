@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::error::ApplicationError;
 use directories::ProjectDirs;
 use rand::prelude::*;
@@ -114,12 +115,18 @@ impl PortRegistry {
 
     // Generate a new unique port
     fn generate_port(&self) -> Result<u16, ApplicationError> {
-        let mut available_ports = (3000..4000).collect::<HashSet<u16>>();
-        for (_, port) in self.ports.iter() {
-            available_ports.remove(port);
-        }
+        let config = Config::load()?;
+        println!("{:?}", config);
+        let assigned_ports = self.ports.values().collect::<HashSet<_>>();
+        let available_ports = config
+            .ranges
+            .iter()
+            .flat_map(|(start, end)| (*start..*end))
+            .filter(|port| !config.reserved.contains(port) && !assigned_ports.contains(port));
 
         let mut rng = rand::thread_rng();
-        Ok(*available_ports.iter().choose(&mut rng).unwrap())
+        available_ports
+            .choose(&mut rng)
+            .ok_or(ApplicationError::AllPortsAllocated)
     }
 }
