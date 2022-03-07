@@ -29,7 +29,7 @@ impl Config {
     // Load the configuration from the file
     pub fn load() -> Result<Self, ApplicationError> {
         let config_path = Self::get_config_path()?;
-        match std::fs::read_to_string(&config_path) {
+        let config = match std::fs::read_to_string(&config_path) {
             Ok(config_str) => {
                 toml::from_str(&config_str).map_err(ApplicationError::DeserializeConfig)
             }
@@ -41,7 +41,23 @@ impl Config {
                     io_err,
                 }),
             },
+        }?;
+
+        if config.ranges.is_empty() {
+            return Err(ApplicationError::ValidateConfig(
+                "port ranges must not be empty".to_string(),
+            ));
         }
+        for (start, end) in config.ranges.iter() {
+            if start >= end {
+                return Err(ApplicationError::ValidateConfig(format!(
+                    "at port range ({:?}-{:?}), start must be less than range end",
+                    start, end
+                )));
+            }
+        }
+
+        Ok(config)
     }
 
     // Return the path to the config file

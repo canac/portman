@@ -33,6 +33,9 @@ pub enum ApplicationError {
     #[error("Couldn't deserialize config file\nError: {0}")]
     DeserializeConfig(toml::de::Error),
 
+    #[error("Config validation error: {0}")]
+    ValidateConfig(String),
+
     #[error("All available ports have been allocated already")]
     AllPortsAllocated,
 }

@@ -116,7 +116,6 @@ impl PortRegistry {
     // Generate a new unique port
     fn generate_port(&self) -> Result<u16, ApplicationError> {
         let config = Config::load()?;
-        println!("{:?}", config);
         let assigned_ports = self.ports.values().collect::<HashSet<_>>();
         let available_ports = config
             .ranges
