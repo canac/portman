@@ -60,6 +60,14 @@ impl Config {
         Ok(config)
     }
 
+    // Return an iterator of the valid ports allowed by this configuration
+    pub fn get_valid_ports(&self) -> impl Iterator<Item = u16> + '_ {
+        self.ranges
+            .iter()
+            .flat_map(|(start, end)| (*start..*end))
+            .filter(|port| !self.reserved.contains(port))
+    }
+
     // Return the path to the config file
     fn get_config_path() -> Result<PathBuf, ApplicationError> {
         let project_dirs =

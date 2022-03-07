@@ -51,8 +51,15 @@ impl PortRegistry {
 
     // Get a port from the registry
     pub fn get(&mut self, project: &str) -> Result<u16, ApplicationError> {
-        match self.ports.get(project) {
-            Some(&port) => Ok(port),
+        let config = Config::load()?;
+
+        match self.ports.get(project).and_then(|port| {
+            config
+                .get_valid_ports()
+                .find(|valid_port| valid_port == port)
+        }) {
+            // The project already has a port assigned, and it is valid, so use it
+            Some(port) => Ok(port),
             None => {
                 let new_port = self.generate_port()?;
                 self.ports.insert(project.to_string(), new_port);
@@ -115,13 +122,11 @@ impl PortRegistry {
 
     // Generate a new unique port
     fn generate_port(&self) -> Result<u16, ApplicationError> {
-        let config = Config::load()?;
         let assigned_ports = self.ports.values().collect::<HashSet<_>>();
+        let config = Config::load()?;
         let available_ports = config
-            .ranges
-            .iter()
-            .flat_map(|(start, end)| (*start..*end))
-            .filter(|port| !config.reserved.contains(port) && !assigned_ports.contains(port));
+            .get_valid_ports()
+            .filter(|port| !assigned_ports.contains(port));
 
         let mut rng = rand::thread_rng();
         available_ports
