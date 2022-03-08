@@ -68,12 +68,6 @@ impl Config {
             .filter(|port| !self.reserved.contains(port))
     }
 
-    // Determine whether the port is a valid port for this configuration
-    // To be valid, it must fall between one of the ranges and not be reserved
-    pub fn is_port_valid(&self, port: u16) -> bool {
-        self.get_valid_ports().any(|valid_port| valid_port == port)
-    }
-
     // Return the path to the config file
     fn get_config_path() -> Result<PathBuf, ApplicationError> {
         let project_dirs =

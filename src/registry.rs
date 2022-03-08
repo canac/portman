@@ -9,33 +9,90 @@ use std::{
     path::PathBuf,
 };
 
+struct PortAllocator {
+    available_ports: HashSet<u16>,
+    rng: ThreadRng,
+}
+
+impl PortAllocator {
+    // Create a new port allocator that allocates from the provided available ports
+    pub fn new(available_ports: impl Iterator<Item = u16>) -> Self {
+        PortAllocator {
+            available_ports: available_ports.collect(),
+            rng: rand::thread_rng(),
+        }
+    }
+
+    // Allocate a new port, using the desired port if it is provided and is valid
+    pub fn allocate(&mut self, desired_port: Option<u16>) -> Option<u16> {
+        let allocated_port = desired_port
+            .and_then(|port| {
+                if self.available_ports.contains(&port) {
+                    Some(port)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| self.available_ports.iter().choose(&mut self.rng).cloned());
+        if let Some(port) = allocated_port {
+            self.available_ports.remove(&port);
+        }
+        allocated_port
+    }
+}
+
+// The port registry data that will be serialized and deserialized in the database
 #[derive(Default, Deserialize, Serialize)]
+pub struct RegistryData {
+    ports: HashMap<String, u16>,
+}
+
 pub struct PortRegistry {
     ports: HashMap<String, u16>,
+    allocator: PortAllocator,
 }
 
 impl PortRegistry {
     // Load a port registry from the file
-    pub fn load() -> Result<Self, ApplicationError> {
+    pub fn load(config: &Config) -> Result<Self, ApplicationError> {
         let registry_path = Self::get_registry_path()?;
-        match fs::read_to_string(&registry_path) {
+        let registry_data = match fs::read_to_string(&registry_path) {
             Ok(registry_str) => {
                 toml::from_str(&registry_str).map_err(ApplicationError::DeserializeRegistry)
             }
             Err(io_err) => match io_err.kind() {
                 // If the file doesn't exist, give it a default value of an empty port registry
-                std::io::ErrorKind::NotFound => Ok(Self::default()),
+                std::io::ErrorKind::NotFound => Ok(RegistryData::default()),
                 _ => Err(ApplicationError::ReadRegistry {
                     path: registry_path,
                     io_err,
                 }),
             },
-        }
+        }?;
+
+        // Validate all ports in the registry against the required config and
+        // regenerate invalid ones as necessary
+        let mut allocator = PortAllocator::new(config.get_valid_ports());
+        let validated_ports = registry_data
+            .ports
+            .into_iter()
+            .map(|(project, port)| allocator.allocate(Some(port)).map(|port| (project, port)))
+            .collect::<Option<HashMap<_, _>>>()
+            .ok_or(ApplicationError::AllPortsAllocated)?;
+        let registry = PortRegistry {
+            ports: validated_ports,
+            allocator,
+        };
+        registry.save()?;
+        Ok(registry)
     }
 
     // Save a port registry to the file
     pub fn save(&self) -> Result<(), ApplicationError> {
-        let registry_str = toml::to_string(&self).map_err(ApplicationError::SerializeRegistry)?;
+        let registry_str = toml::to_string(&RegistryData {
+            ports: self.ports.clone(),
+        })
+        .map_err(ApplicationError::SerializeRegistry)?;
 
         let registry_path = Self::get_registry_path()?;
         let parent_dir = registry_path
@@ -48,26 +105,12 @@ impl PortRegistry {
         Ok(())
     }
 
-    // Get a a project's port from the registry_path
-    // A port is not generated if the project does not exist. However, if an
-    // existing project's port is invalid due to a configuration change, a new
-    // valid port is transparently generated.
-    pub fn get(&mut self, project: &str) -> Result<u16, ApplicationError> {
-        let config = Config::load()?;
-        match self.ports.get(project) {
-            None => Err(ApplicationError::NonExistentProject(project.to_string())),
-            Some(&port) => {
-                if config.is_port_valid(port) {
-                    Ok(port)
-                } else {
-                    // Regenerate a valid port for this project
-                    let new_port = self.generate_port()?;
-                    self.ports.insert(project.to_string(), new_port);
-                    self.save()?;
-                    Ok(new_port)
-                }
-            }
-        }
+    // Get a a project's port from the registry
+    pub fn get(&self, project: &str) -> Result<u16, ApplicationError> {
+        self.ports
+            .get(project)
+            .cloned()
+            .ok_or_else(|| ApplicationError::NonExistentProject(project.to_string()))
     }
 
     // Return a reference to all the ports in the registry
@@ -80,7 +123,10 @@ impl PortRegistry {
         if self.ports.get(project).is_some() {
             Err(ApplicationError::DuplicateProject(project.to_string()))
         } else {
-            let new_port = self.generate_port()?;
+            let new_port = self
+                .allocator
+                .allocate(None)
+                .ok_or_else(|| ApplicationError::NonExistentProject(project.to_string()))?;
             self.ports.insert(project.to_string(), new_port);
             self.save()?;
             Ok(new_port)
@@ -98,24 +144,16 @@ impl PortRegistry {
         }
     }
 
+    // Release all previously allocated projects
+    pub fn release_all(&mut self) -> Result<(), ApplicationError> {
+        self.ports = HashMap::new();
+        self.save()
+    }
+
     // Return the path to the persisted registry file
     fn get_registry_path() -> Result<PathBuf, ApplicationError> {
         let project_dirs =
             ProjectDirs::from("com", "canac", "portman").ok_or(ApplicationError::ProjectDirs)?;
         Ok(project_dirs.data_local_dir().join("registry.toml"))
-    }
-
-    // Generate a new unique port
-    fn generate_port(&self) -> Result<u16, ApplicationError> {
-        let assigned_ports = self.ports.values().collect::<HashSet<_>>();
-        let config = Config::load()?;
-        let available_ports = config
-            .get_valid_ports()
-            .filter(|port| !assigned_ports.contains(port));
-
-        let mut rng = rand::thread_rng();
-        available_ports
-            .choose(&mut rng)
-            .ok_or(ApplicationError::AllPortsAllocated)
     }
 }

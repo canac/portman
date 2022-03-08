@@ -5,6 +5,7 @@ mod init;
 mod registry;
 
 use crate::cli::{Cli, InitShell};
+use crate::config::Config;
 use crate::error::ApplicationError;
 use crate::init::init_fish;
 use crate::registry::PortRegistry;
@@ -43,6 +44,9 @@ fn get_project_name(cli_project_name: Option<String>) -> Result<String, Applicat
 }
 
 fn run() -> Result<(), ApplicationError> {
+    let config = Config::load()?;
+    let mut registry = PortRegistry::load(&config)?;
+
     let cli = Cli::from_args();
     match cli {
         Cli::Init { shell } => match shell {
@@ -53,31 +57,27 @@ fn run() -> Result<(), ApplicationError> {
 
         Cli::Get { project_name } => {
             let project = get_project_name(project_name)?;
-            let mut registry = PortRegistry::load()?;
             println!("{}", registry.get(project.as_str())?)
         }
 
         Cli::Allocate { project_name } => {
             let project = get_project_name(project_name)?;
-            let mut registry = PortRegistry::load()?;
             let port = registry.allocate(project.as_str())?;
             println!("Allocated port {} for project {}\n\nThe PORT environment variable will now be automatically set whenever this git repo is cd-ed into from an initialized shell.\nRun `cd .` to manually set the PORT now.", port, project)
         }
 
         Cli::Release { project_name } => {
             let project = get_project_name(project_name)?;
-            let mut registry = PortRegistry::load()?;
             let port = registry.release(project.as_str())?;
-            println!("Released port {} for project {}\n\nRun `cd .` to manually remove the PORT environment variable.", port, project);
+            println!("Released port {} for project {}\n\nRun `cd .` to manually remove the PORT environment variable.", port, project)
         }
 
         Cli::Reset => {
-            let empty_registry = PortRegistry::default();
-            empty_registry.save()?;
+            registry.release_all()?;
+            println!("All allocated ports have been released")
         }
 
         Cli::Caddyfile => {
-            let registry = PortRegistry::load()?;
             let caddyfile = registry
                 .get_all()
                 .iter()
@@ -89,7 +89,7 @@ fn run() -> Result<(), ApplicationError> {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            print!("{}", caddyfile);
+            print!("{}", caddyfile)
         }
     }
 
