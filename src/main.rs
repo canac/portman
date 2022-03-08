@@ -80,7 +80,6 @@ fn run() -> Result<(), ApplicationError> {
         Cli::Caddyfile => {
             let caddyfile = registry
                 .get_all()
-                .iter()
                 .map(|(project, port)| {
                     format!(
                         "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",

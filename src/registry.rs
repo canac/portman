@@ -4,7 +4,7 @@ use directories::ProjectDirs;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     path::PathBuf,
 };
@@ -44,11 +44,11 @@ impl PortAllocator {
 // The port registry data that will be serialized and deserialized in the database
 #[derive(Default, Deserialize, Serialize)]
 pub struct RegistryData {
-    ports: HashMap<String, u16>,
+    ports: BTreeMap<String, u16>,
 }
 
 pub struct PortRegistry {
-    ports: HashMap<String, u16>,
+    ports: BTreeMap<String, u16>,
     allocator: PortAllocator,
 }
 
@@ -77,7 +77,7 @@ impl PortRegistry {
             .ports
             .into_iter()
             .map(|(project, port)| allocator.allocate(Some(port)).map(|port| (project, port)))
-            .collect::<Option<HashMap<_, _>>>()
+            .collect::<Option<BTreeMap<_, _>>>()
             .ok_or(ApplicationError::AllPortsAllocated)?;
         let registry = PortRegistry {
             ports: validated_ports,
@@ -114,8 +114,8 @@ impl PortRegistry {
     }
 
     // Return a reference to all the ports in the registry
-    pub fn get_all(&self) -> &HashMap<String, u16> {
-        &self.ports
+    pub fn get_all(&self) -> impl Iterator<Item = (&String, &u16)> + '_ {
+        self.ports.iter()
     }
 
     // Allocate a port to a new project
@@ -146,7 +146,7 @@ impl PortRegistry {
 
     // Release all previously allocated projects
     pub fn release_all(&mut self) -> Result<(), ApplicationError> {
-        self.ports = HashMap::new();
+        self.ports = BTreeMap::new();
         self.save()
     }
 
