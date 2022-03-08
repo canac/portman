@@ -7,6 +7,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs,
     path::PathBuf,
+    process::{Command, Stdio},
 };
 
 struct PortAllocator {
@@ -72,18 +73,28 @@ impl PortRegistry {
 
         // Validate all ports in the registry against the required config and
         // regenerate invalid ones as necessary
+        let mut changed = false;
         let mut allocator = PortAllocator::new(config.get_valid_ports());
         let validated_ports = registry_data
             .ports
             .into_iter()
-            .map(|(project, port)| allocator.allocate(Some(port)).map(|port| (project, port)))
+            .map(|(project, old_port)| {
+                allocator.allocate(Some(old_port)).map(|port| {
+                    if port != old_port {
+                        changed = true;
+                    }
+                    (project, port)
+                })
+            })
             .collect::<Option<BTreeMap<_, _>>>()
             .ok_or(ApplicationError::AllPortsAllocated)?;
         let registry = PortRegistry {
             ports: validated_ports,
             allocator,
         };
-        registry.save()?;
+        if changed {
+            registry.save()?;
+        }
         Ok(registry)
     }
 
@@ -102,7 +113,8 @@ impl PortRegistry {
             .map_err(|_| ApplicationError::WriteRegistry(registry_path.clone()))?;
         fs::write(registry_path.clone(), registry_str)
             .map_err(|_| ApplicationError::WriteRegistry(registry_path.clone()))?;
-        Ok(())
+
+        self.reload_caddy()
     }
 
     // Get a a project's port from the registry
@@ -150,10 +162,46 @@ impl PortRegistry {
         self.save()
     }
 
+    // Return the generated Caddyfile
+    pub fn caddyfile(&self) -> String {
+        self.get_all()
+            .map(|(project, port)| {
+                format!(
+                    "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",
+                    project, port
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     // Return the path to the persisted registry file
     fn get_registry_path() -> Result<PathBuf, ApplicationError> {
         let project_dirs =
             ProjectDirs::from("com", "canac", "portman").ok_or(ApplicationError::ProjectDirs)?;
         Ok(project_dirs.data_local_dir().join("registry.toml"))
+    }
+
+    // Reload the caddy service with the current port registry
+    fn reload_caddy(&self) -> Result<(), ApplicationError> {
+        // Write the caddyfile to a file
+        let caddyfile = self.caddyfile();
+        let brew_prefix = std::env::var("HOMEBREW_PREFIX").map_err(ApplicationError::ReadEnv)?;
+        let caddyfile_path = PathBuf::from(brew_prefix).join("etc").join("Caddyfile");
+        fs::write(caddyfile_path.clone(), caddyfile).map_err(ApplicationError::WriteCaddyfile)?;
+
+        // Reload the caddy config using the new Caddyfile
+        let status = Command::new("caddy")
+            .args(["reload", "--adapter", "caddyfile", "--config"])
+            .arg(caddyfile_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(ApplicationError::Exec)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(ApplicationError::ReloadCaddy)
+        }
     }
 }

@@ -42,8 +42,17 @@ pub enum ApplicationError {
     #[error("All available ports have been allocated already")]
     AllPortsAllocated,
 
-    #[error("Error executing git command\nError: {0}")]
-    ExecGit(std::io::Error),
+    #[error("Error executing command\nError: {0}")]
+    Exec(std::io::Error),
+
+    #[error("Error reading environment variable\nError: {0}")]
+    ReadEnv(std::env::VarError),
+
+    #[error("Error writing Caddyfile\nError: {0}")]
+    WriteCaddyfile(std::io::Error),
+
+    #[error("Error reloading caddy config")]
+    ReloadCaddy,
 
     #[error("Error reading git output\nError: {0}")]
     ReadGitStdout(std::str::Utf8Error),

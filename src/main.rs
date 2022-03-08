@@ -17,7 +17,7 @@ fn extract_project_name() -> Result<String, ApplicationError> {
     let stdout = std::process::Command::new("git")
         .args(["config", "--get", "remote.origin.url"])
         .output()
-        .map_err(ApplicationError::ExecGit)?
+        .map_err(ApplicationError::Exec)?
         .stdout;
     let repo = std::str::from_utf8(&stdout)
         .map_err(ApplicationError::ReadGitStdout)?
@@ -84,17 +84,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Caddyfile => {
-            let caddyfile = registry
-                .get_all()
-                .map(|(project, port)| {
-                    format!(
-                        "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",
-                        project, port
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            print!("{}", caddyfile)
+            print!("{}", registry.caddyfile())
         }
     }
 
