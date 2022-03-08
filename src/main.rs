@@ -61,15 +61,21 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Allocate { project_name } => {
-            let project = get_project_name(project_name)?;
+            let project = get_project_name(project_name.clone())?;
             let port = registry.allocate(project.as_str())?;
-            println!("Allocated port {} for project {}\n\nThe PORT environment variable will now be automatically set whenever this git repo is cd-ed into from an initialized shell.\nRun `cd .` to manually set the PORT now.", port, project)
+            println!("Allocated port {} for project {}", port, project);
+            if project_name.is_none() {
+                println!("\nThe PORT environment variable will now be automatically set whenever this git repo is cd-ed into from an initialized shell.\nRun `cd .` to manually set the PORT now.")
+            }
         }
 
         Cli::Release { project_name } => {
-            let project = get_project_name(project_name)?;
+            let project = get_project_name(project_name.clone())?;
             let port = registry.release(project.as_str())?;
-            println!("Released port {} for project {}\n\nRun `cd .` to manually remove the PORT environment variable.", port, project)
+            println!("Released port {} for project {}", port, project);
+            if project_name.is_none() {
+                println!("\nRun `cd .` to manually remove the PORT environment variable.")
+            }
         }
 
         Cli::Reset => {
