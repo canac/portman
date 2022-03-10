@@ -24,6 +24,9 @@ pub enum Cli {
         shell: InitShell,
     },
 
+    #[structopt(about = "Display the current configuration")]
+    Config,
+
     #[structopt(about = "Print the port allocated for a project")]
     Get {
         #[structopt(

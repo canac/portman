@@ -1,6 +1,9 @@
 use crate::error::ApplicationError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    fmt::{Display, Formatter},
+    path::PathBuf,
+};
 
 fn default_ranges() -> Vec<(u16, u16)> {
     vec![(3000, 4000)]
@@ -62,5 +65,33 @@ impl Config {
             .iter()
             .flat_map(|(start, end)| (*start..*end))
             .filter(|port| !self.reserved.contains(port))
+    }
+}
+
+impl Display for Config {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "Allowed port ranges: {}",
+            self.ranges
+                .iter()
+                .map(|(start, end)| format!("{}-{}", start, end - 1))
+                .collect::<Vec<_>>()
+                .join(" & ")
+        )?;
+
+        if !self.reserved.is_empty() {
+            write!(
+                fmt,
+                "\nReserved ports: {}",
+                self.reserved
+                    .iter()
+                    .map(|port| format!("{}", port))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )?;
+        }
+
+        Ok(())
     }
 }

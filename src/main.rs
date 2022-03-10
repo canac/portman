@@ -53,13 +53,13 @@ fn run() -> Result<(), ApplicationError> {
         Some(config_path) => std::path::PathBuf::from(config_path),
         None => data_dir.join("config.toml"),
     };
-    let config = Config::load(config_path)?.unwrap_or_else(|| {
+    let config = Config::load(config_path.clone())?.unwrap_or_else(|| {
         if config_env.is_some() {
             println!("Warning: config file doesn't exist. Using default config.");
         }
         Config::default()
     });
-    let mut registry = PortRegistry::load(registry_path, &config)?;
+    let mut registry = PortRegistry::load(registry_path.clone(), &config)?;
 
     let cli = Cli::from_args();
     match cli {
@@ -68,6 +68,15 @@ fn run() -> Result<(), ApplicationError> {
                 println!("{}", init_fish())
             }
         },
+
+        Cli::Config => {
+            println!(
+                "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{}",
+                config_path.to_string_lossy(),
+                registry_path.to_string_lossy(),
+                config
+            )
+        }
 
         Cli::Get { project_name } => {
             let project = get_project_name(project_name)?;
