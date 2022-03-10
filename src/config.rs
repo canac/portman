@@ -1,5 +1,4 @@
 use crate::error::ApplicationError;
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -27,19 +26,16 @@ impl Default for Config {
 
 impl Config {
     // Load the configuration from the file
-    pub fn load() -> Result<Self, ApplicationError> {
-        let config_path = Self::get_config_path()?;
-        let config = match std::fs::read_to_string(&config_path) {
+    // Return None if the file doesn't exist
+    pub fn load(path: PathBuf) -> Result<Option<Self>, ApplicationError> {
+        let config: Config = match std::fs::read_to_string(&path) {
             Ok(config_str) => {
                 toml::from_str(&config_str).map_err(ApplicationError::DeserializeConfig)
             }
             Err(io_err) => match io_err.kind() {
                 // If the file doesn't exist, load the default config
-                std::io::ErrorKind::NotFound => Ok(Self::default()),
-                _ => Err(ApplicationError::ReadConfig {
-                    path: config_path,
-                    io_err,
-                }),
+                std::io::ErrorKind::NotFound => return Ok(None),
+                _ => Err(ApplicationError::ReadConfig { path, io_err }),
             },
         }?;
 
@@ -57,7 +53,7 @@ impl Config {
             }
         }
 
-        Ok(config)
+        Ok(Some(config))
     }
 
     // Return an iterator of the valid ports allowed by this configuration
@@ -66,12 +62,5 @@ impl Config {
             .iter()
             .flat_map(|(start, end)| (*start..*end))
             .filter(|port| !self.reserved.contains(port))
-    }
-
-    // Return the path to the config file
-    fn get_config_path() -> Result<PathBuf, ApplicationError> {
-        let project_dirs =
-            ProjectDirs::from("com", "canac", "portman").ok_or(ApplicationError::ProjectDirs)?;
-        Ok(project_dirs.data_local_dir().join("config.toml"))
     }
 }

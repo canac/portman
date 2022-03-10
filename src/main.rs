@@ -44,8 +44,22 @@ fn get_project_name(cli_project_name: Option<String>) -> Result<String, Applicat
 }
 
 fn run() -> Result<(), ApplicationError> {
-    let config = Config::load()?;
-    let mut registry = PortRegistry::load(&config)?;
+    let project_dirs = directories::ProjectDirs::from("com", "canac", "portman")
+        .ok_or(ApplicationError::ProjectDirs)?;
+    let data_dir = project_dirs.data_local_dir();
+    let registry_path = data_dir.join("registry.toml");
+    let config_env = std::env::var_os("PORTMAN_CONFIG");
+    let config_path = match config_env.clone() {
+        Some(config_path) => std::path::PathBuf::from(config_path),
+        None => data_dir.join("config.toml"),
+    };
+    let config = Config::load(config_path)?.unwrap_or_else(|| {
+        if config_env.is_some() {
+            println!("Warning: config file doesn't exist. Using default config.");
+        }
+        Config::default()
+    });
+    let mut registry = PortRegistry::load(registry_path, &config)?;
 
     let cli = Cli::from_args();
     match cli {

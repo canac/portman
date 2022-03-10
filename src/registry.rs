@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::error::ApplicationError;
-use directories::ProjectDirs;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -49,15 +48,15 @@ pub struct RegistryData {
 }
 
 pub struct PortRegistry {
+    path: PathBuf,
     ports: BTreeMap<String, u16>,
     allocator: PortAllocator,
 }
 
 impl PortRegistry {
     // Load a port registry from the file
-    pub fn load(config: &Config) -> Result<Self, ApplicationError> {
-        let registry_path = Self::get_registry_path()?;
-        let registry_data = match fs::read_to_string(&registry_path) {
+    pub fn load(path: PathBuf, config: &Config) -> Result<Self, ApplicationError> {
+        let registry_data = match fs::read_to_string(&path) {
             Ok(registry_str) => {
                 toml::from_str(&registry_str).map_err(ApplicationError::DeserializeRegistry)
             }
@@ -65,7 +64,7 @@ impl PortRegistry {
                 // If the file doesn't exist, give it a default value of an empty port registry
                 std::io::ErrorKind::NotFound => Ok(RegistryData::default()),
                 _ => Err(ApplicationError::ReadRegistry {
-                    path: registry_path,
+                    path: path.clone(),
                     io_err,
                 }),
             },
@@ -89,6 +88,7 @@ impl PortRegistry {
             .collect::<Option<BTreeMap<_, _>>>()
             .ok_or(ApplicationError::AllPortsAllocated)?;
         let registry = PortRegistry {
+            path,
             ports: validated_ports,
             allocator,
         };
@@ -105,14 +105,14 @@ impl PortRegistry {
         })
         .map_err(ApplicationError::SerializeRegistry)?;
 
-        let registry_path = Self::get_registry_path()?;
-        let parent_dir = registry_path
+        let parent_dir = self
+            .path
             .parent()
-            .ok_or_else(|| ApplicationError::WriteRegistry(registry_path.clone()))?;
+            .ok_or_else(|| ApplicationError::WriteRegistry(self.path.clone()))?;
         fs::create_dir_all(parent_dir)
-            .map_err(|_| ApplicationError::WriteRegistry(registry_path.clone()))?;
-        fs::write(registry_path.clone(), registry_str)
-            .map_err(|_| ApplicationError::WriteRegistry(registry_path.clone()))?;
+            .map_err(|_| ApplicationError::WriteRegistry(self.path.clone()))?;
+        fs::write(self.path.clone(), registry_str)
+            .map_err(|_| ApplicationError::WriteRegistry(self.path.clone()))?;
 
         self.reload_caddy()
     }
@@ -173,13 +173,6 @@ impl PortRegistry {
             })
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    // Return the path to the persisted registry file
-    fn get_registry_path() -> Result<PathBuf, ApplicationError> {
-        let project_dirs =
-            ProjectDirs::from("com", "canac", "portman").ok_or(ApplicationError::ProjectDirs)?;
-        Ok(project_dirs.data_local_dir().join("registry.toml"))
     }
 
     // Reload the caddy service with the current port registry
