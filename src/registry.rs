@@ -117,12 +117,9 @@ impl PortRegistry {
         self.reload_caddy()
     }
 
-    // Get a a project's port from the registry
-    pub fn get(&self, project: &str) -> Result<u16, ApplicationError> {
-        self.ports
-            .get(project)
-            .cloned()
-            .ok_or_else(|| ApplicationError::NonExistentProject(project.to_string()))
+    // Get a project's port from the registry
+    pub fn get(&self, project: &str) -> Option<u16> {
+        self.ports.get(project).cloned()
     }
 
     // Return a reference to all the ports in the registry

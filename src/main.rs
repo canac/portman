@@ -78,9 +78,22 @@ fn run() -> Result<(), ApplicationError> {
             )
         }
 
-        Cli::Get { project_name } => {
+        Cli::Get {
+            project_name,
+            allocate,
+        } => {
             let project = get_project_name(project_name)?;
-            println!("{}", registry.get(project.as_str())?)
+            let port = match registry.get(project.as_str()) {
+                Some(port) => Ok(port),
+                None => {
+                    if allocate {
+                        registry.allocate(project.as_str())
+                    } else {
+                        Err(ApplicationError::NonExistentProject(project))
+                    }
+                }
+            }?;
+            println!("{}", port)
         }
 
         Cli::Allocate { project_name } => {

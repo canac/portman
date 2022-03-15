@@ -33,6 +33,12 @@ pub enum Cli {
             about = "The name of the project to get a port for (defaults to the current git project name)"
         )]
         project_name: Option<String>,
+
+        #[structopt(
+            long,
+            about = "Allocate a new port for the project if one isn't allocated yet"
+        )]
+        allocate: bool,
     },
 
     #[structopt(about = "Allocate a port for a new project")]
