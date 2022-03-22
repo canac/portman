@@ -58,9 +58,9 @@ jobs:
       - name: Build binary
         uses: actions-rs/cargo@v1
         with:
+          use-cross: ${{ runner.os == 'Linux' }}
           command: build
           args: --release --locked --target=${{ matrix.target }} --color=always --verbose
-          # use-cross: ${{ runner.os == 'Linux' }}
 
       - name: Package
         run: >
@@ -89,7 +89,6 @@ jobs:
             *.tar.gz
 
       - name: Create release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
           draft: true
