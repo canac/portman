@@ -1,0 +1,98 @@
+name: release
+on:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-unknown-linux-musl, arm-unknown-linux-musleabihf, armv7-unknown-linux-musleabihf, aarch64-unknown-linux-musl, x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+        # include:
+        #   - os: ubuntu-latest
+        #     target: x86_64-unknown-linux-musl
+        #   - os: ubuntu-latest
+        #     target: arm-unknown-linux-musleabihf
+        #   - os: ubuntu-latest
+        #     target: armv7-unknown-linux-musleabihf
+        #   - os: ubuntu-latest
+        #     target: aarch64-unknown-linux-musl
+
+        #   - os: macos-11
+        #     target: x86_64-apple-darwin
+        #   - os: macos-11
+        #     target: aarch64-apple-darwin
+
+        #   - os: windows-latest
+        #     target: x86_64-pc-windows-msvc
+        #   - os: windows-latest
+        #     target: aarch64-pc-windows-msvc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set artifact name
+        shell: bash
+        run: |
+          version="$(git describe --tags --match='v*.*.*' --always)"
+          name="portman-$version-${{ matrix.target }}"
+          echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
+
+          echo "version: $version"
+          echo "artifact: $name"
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build binary
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --locked --target=${{ matrix.target }} --color=always --verbose
+          # use-cross: ${{ runner.os == 'Linux' }}
+
+      - name: Package
+        run: >
+          tar -cv LICENSE README.md -C target/${{ matrix.target }}/release/ portman | gzip --best > '${{ env.ARTIFACT_NAME }}.tar.gz'
+
+      # - name: Package (*nix)
+      #   if: runner.os != 'Windows'
+      #   run: >
+      #     tar -cv
+      #     LICENSE README.md
+      #     -C target/${{ matrix.target }}/release/ portman
+      #     | gzip --best > '${{ env.ARTIFACT_NAME }}.tar.gz'
+      # - name: Package (Windows)
+      #   if: runner.os == 'Windows'
+      #   run: >
+      #     7z a ${{ env.ARTIFACT_NAME }}.zip
+      #     LICENSE README.md
+      #     ./target/${{ matrix.target }}/release/portman.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            *.zip
+            *.tar.gz
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            *.zip
+            *.tar.gz
