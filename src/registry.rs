@@ -175,7 +175,7 @@ impl PortRegistry {
     }
 
     // Reload the caddy service with the current port registry
-    fn reload_caddy(&self) -> Result<(), ApplicationError> {
+    pub fn reload_caddy(&self) -> Result<(), ApplicationError> {
         // Write the caddyfile to a file
         let caddyfile = self.caddyfile();
         let brew_prefix = std::env::var("HOMEBREW_PREFIX").map_err(ApplicationError::ReadEnv)?;

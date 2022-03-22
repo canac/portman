@@ -122,6 +122,11 @@ fn run() -> Result<(), ApplicationError> {
         Cli::Caddyfile => {
             print!("{}", registry.caddyfile())
         }
+
+        Cli::ReloadCaddy => {
+            registry.reload_caddy()?;
+            println!("caddy was successfully reloaded")
+        }
     }
 
     Ok(())

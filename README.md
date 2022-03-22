@@ -84,6 +84,10 @@ Releases all ports allocated for all projects.
 
 Prints a valid Caddyfile that reverse-proxies all registered projects from their allocated ports to https://\*.localhost URLs.
 
+### `portman reload-caddy`
+
+Regenerates the Caddyfile and reloads the caddy config. portman updates the Caddyfile and reloads caddy whenever it makes changes, so this command should only be necessary if something else outside of portman's control is manipulating the Caddyfile or caddy config.
+
 ### `portman config`
 
 Prints the configuration that is currently being used.

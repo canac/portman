@@ -62,4 +62,7 @@ pub enum Cli {
 
     #[structopt(about = "Print the generated Caddyfile for the allocated ports")]
     Caddyfile,
+
+    #[structopt(about = "Regenerate the Caddyfile and restart caddy")]
+    ReloadCaddy,
 }
