@@ -98,7 +98,7 @@ portman has a few configuration parameters that can be tweaked. Run `portman con
 
 ```toml
 ranges = [[3000, 3999]]
-reserved_ports = []
+reserved = []
 ```
 
 ### `ranges`
@@ -107,9 +107,9 @@ reserved_ports = []
 
 Defaults to `[[3000, 3999]]` if omitted.
 
-### `reserved_ports`
+### `reserved`
 
-`reserved_ports` is an array of ports that are reserved and will not be allocated to any project. For example, if you want to allocate ports between 3000 and 3999, but port 3277 is used by a something on your machine, set `reserved_ports` to `[3277]` to prevent portman from allocating port 3277 to a project.
+`reserved` is an array of ports that are reserved and will not be allocated to any project. For example, if you want to allocate ports between 3000 and 3999, but port 3277 is used by a something on your machine, set `reserved` to `[3277]` to prevent portman from allocating port 3277 to a project.
 
 Defaults to `[]` if omitted.
 
