@@ -31,16 +31,20 @@ impl Config {
     // Load the configuration from the file
     // Return None if the file doesn't exist
     pub fn load(path: PathBuf) -> Result<Option<Self>, ApplicationError> {
-        let config: Config = match std::fs::read_to_string(&path) {
-            Ok(config_str) => {
-                toml::from_str(&config_str).map_err(ApplicationError::DeserializeConfig)
-            }
+        match std::fs::read_to_string(&path) {
+            Ok(config_str) => Ok(Some(Self::from_toml(&config_str)?)),
             Err(io_err) => match io_err.kind() {
                 // If the file doesn't exist, load the default config
-                std::io::ErrorKind::NotFound => return Ok(None),
+                std::io::ErrorKind::NotFound => Ok(None),
                 _ => Err(ApplicationError::ReadConfig { path, io_err }),
             },
-        }?;
+        }
+    }
+
+    // Return a new configuration from a TOML string
+    fn from_toml(toml_str: &str) -> Result<Self, ApplicationError> {
+        let config: Config =
+            toml::from_str(toml_str).map_err(ApplicationError::DeserializeConfig)?;
 
         if config.ranges.is_empty() {
             return Err(ApplicationError::ValidateConfig(
@@ -56,7 +60,7 @@ impl Config {
             }
         }
 
-        Ok(Some(config))
+        Ok(config)
     }
 
     // Return an iterator of the valid ports allowed by this configuration
@@ -92,6 +96,56 @@ impl Display for Config {
             )?;
         }
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_config() -> Result<(), ApplicationError> {
+        let config = Config::from_toml("")?;
+        assert_eq!(config.ranges, vec![(3000, 3999)]);
+        assert_eq!(config.reserved, vec![]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_config() -> Result<(), ApplicationError> {
+        let config = Config::load(PathBuf::from("./missing_config.toml"))?;
+        assert!(config.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_ranges() {
+        let result = Config::from_toml("ranges = []");
+        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+    }
+
+    #[test]
+    fn test_inverted_ranges() {
+        let result = Config::from_toml("ranges = [[3999, 3000]]");
+        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+    }
+
+    #[test]
+    fn test_empty_range() {
+        let result = Config::from_toml("ranges = [[3000, 3000]]");
+        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+    }
+
+    #[test]
+    fn test_valid_ports() -> Result<(), ApplicationError> {
+        let config = Config::from_toml(
+            "ranges = [[3000, 3002], [4000, 4005]]\nreserved = [3001, 4000, 4004]",
+        )?;
+        assert_eq!(
+            config.get_valid_ports().collect::<Vec<_>>(),
+            vec![3000, 3002, 4001, 4002, 4003, 4005]
+        );
         Ok(())
     }
 }
