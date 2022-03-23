@@ -97,19 +97,19 @@ Prints the configuration that is currently being used.
 portman has a few configuration parameters that can be tweaked. Run `portman config` to locate the default config file location. The configuration file is in TOML format. This is the default config:
 
 ```toml
-ranges = [[3000, 4000]]
+ranges = [[3000, 3999]]
 reserved_ports = []
 ```
 
 ### `ranges`
 
-`ranges` is an array of two-element `[start, end]` arrays representing the allowed port ranges. The first element is the beginning of the port range, inclusive, and the second element is the end of the port range, exclusive. For example, [[3000, 4000], [8000, 8100]] would allocate ports from 3000-3999 and 8000-8099.
+`ranges` is an array of two-element `[start, end]` arrays representing the allowed port ranges. The first element is the beginning of the port range, inclusive, and the second element is the end of the port range, inclusive. For example, [[3000, 3999], [8000, 8099]] would allocate ports from 3000-3999 and 8000-8099.
 
-Defaults to `[[3000, 4000]]` if omitted.
+Defaults to `[[3000, 3999]]` if omitted.
 
 ### `reserved_ports`
 
-`reserved_ports` is an array of ports that are reserved and will not be allocated to any project. For example, if you want to allocate ports between 3000 and 4000, but port 3277 is used by a something on your machine, set `reserved_ports` to `[3277]` to prevent portman from allocating port 3277 to a project.
+`reserved_ports` is an array of ports that are reserved and will not be allocated to any project. For example, if you want to allocate ports between 3000 and 3999, but port 3277 is used by a something on your machine, set `reserved_ports` to `[3277]` to prevent portman from allocating port 3277 to a project.
 
 Defaults to `[]` if omitted.
 

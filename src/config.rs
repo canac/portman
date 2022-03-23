@@ -6,7 +6,7 @@ use std::{
 };
 
 fn default_ranges() -> Vec<(u16, u16)> {
-    vec![(3000, 4000)]
+    vec![(3000, 3999)]
 }
 
 #[derive(Deserialize, Serialize)]
@@ -63,7 +63,7 @@ impl Config {
     pub fn get_valid_ports(&self) -> impl Iterator<Item = u16> + '_ {
         self.ranges
             .iter()
-            .flat_map(|(start, end)| (*start..*end))
+            .flat_map(|(start, end)| (*start..=*end))
             .filter(|port| !self.reserved.contains(port))
     }
 }
@@ -75,7 +75,7 @@ impl Display for Config {
             "Allowed port ranges: {}",
             self.ranges
                 .iter()
-                .map(|(start, end)| format!("{}-{}", start, end - 1))
+                .map(|(start, end)| format!("{}-{}", start, end))
                 .collect::<Vec<_>>()
                 .join(" & ")
         )?;
