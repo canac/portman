@@ -99,3 +99,5 @@ jobs:
           formula-name: portman
           homebrew-tap: canac/homebrew-tap
           create-pullrequest: true
+        env:
+          COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
