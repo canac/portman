@@ -94,7 +94,13 @@ Prints the configuration that is currently being used.
 
 ## Configuring portman
 
-portman has a few configuration parameters that can be tweaked. Run `portman config` to locate the default config file location. The configuration file is in TOML format. This is the default config:
+portman has a few configuration parameters that can be tweaked. Run `portman config` to locate the default config file location. The config file location can also be changed by setting the `PORTMAN_CONFIG` environment variable.
+
+```sh
+PORTMAN_CONFIG=~/portman.toml portman config
+```
+
+The config file is in TOML format. This is the default config:
 
 ```toml
 ranges = [[3000, 3999]]
