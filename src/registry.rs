@@ -193,6 +193,16 @@ mod tests {
         PortRegistry::load(PathBuf::from("./fixtures/registry.toml"), &config)
     }
 
+    // Convert Err(ApplicationError::Exec(_)) into Ok(()), leaving all other results untouched
+    fn suppress_exec_error<Value>(
+        result: Result<Value, ApplicationError>,
+    ) -> Result<(), ApplicationError> {
+        match result {
+            Ok(_) | Err(ApplicationError::Exec(_)) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
     #[test]
     fn test_load() -> Result<(), ApplicationError> {
         let registry = get_fixture_registry()?;
@@ -252,7 +262,7 @@ mod tests {
             ports,
             allocator: PortAllocator::new(config.get_valid_ports()),
         };
-        registry.save()?;
+        suppress_exec_error(registry.save())?;
         assert!(std::path::Path::exists(&registry_path));
         Ok(())
     }
@@ -268,7 +278,7 @@ mod tests {
     #[test]
     fn test_allocate() -> Result<(), ApplicationError> {
         let mut registry = get_tempfile_registry("test_allocate.toml", None);
-        registry.allocate("app4")?;
+        suppress_exec_error(registry.allocate("app4"))?;
         assert!(registry.ports.get("app4").is_some());
         Ok(())
     }
@@ -276,7 +286,7 @@ mod tests {
     #[test]
     fn test_release() -> Result<(), ApplicationError> {
         let mut registry = get_tempfile_registry("test_release.toml", None);
-        registry.release("app2")?;
+        suppress_exec_error(registry.release("app2"))?;
         assert!(registry.ports.get("app2").is_none());
         Ok(())
     }
@@ -284,7 +294,7 @@ mod tests {
     #[test]
     fn test_release_all() -> Result<(), ApplicationError> {
         let mut registry = get_tempfile_registry("test_release_all.toml", None);
-        registry.release_all()?;
+        suppress_exec_error(registry.release_all())?;
         assert!(registry.ports.is_empty());
         Ok(())
     }
