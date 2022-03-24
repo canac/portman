@@ -90,11 +90,6 @@ impl PortRegistry {
         self.ports.get(project).cloned()
     }
 
-    // Return a reference to all the ports in the registry
-    pub fn get_all(&self) -> impl Iterator<Item = (&String, &u16)> + '_ {
-        self.ports.iter()
-    }
-
     // Allocate a port to a new project
     pub fn allocate(&mut self, project: &str) -> Result<u16, ApplicationError> {
         if self.ports.get(project).is_some() {
@@ -130,7 +125,8 @@ impl PortRegistry {
     // Return the generated Caddyfile
     pub fn caddyfile(&self) -> String {
         let caddyfile = self
-            .get_all()
+            .ports
+            .iter()
             .map(|(project, port)| {
                 format!(
                     "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",
@@ -163,5 +159,156 @@ impl PortRegistry {
         } else {
             Err(ApplicationError::ReloadCaddy)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env::temp_dir;
+
+    use super::*;
+
+    // Return a PortRegistry backed by a tempfile, so that save() won't overwrite a fixture file
+    fn get_tempfile_registry(registry_name: &str, config: Option<Config>) -> PortRegistry {
+        let ports = vec![
+            ("app1".to_string(), 3001),
+            ("app2".to_string(), 3002),
+            ("app3".to_string(), 3003),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<String, u16>>();
+        let registry_path = temp_dir()
+            .join("portman")
+            .join(PathBuf::from(registry_name));
+        PortRegistry {
+            path: registry_path,
+            ports,
+            allocator: PortAllocator::new(config.unwrap_or_default().get_valid_ports()),
+        }
+    }
+
+    // Return a PortRegistry backed by a fixture file
+    fn get_fixture_registry() -> Result<PortRegistry, ApplicationError> {
+        let config = Config::default();
+        PortRegistry::load(PathBuf::from("./fixtures/registry.toml"), &config)
+    }
+
+    #[test]
+    fn test_load() -> Result<(), ApplicationError> {
+        let registry = get_fixture_registry()?;
+        let expected_ports = vec![
+            ("app1".to_string(), 3001),
+            ("app2".to_string(), 3002),
+            ("app3".to_string(), 3003),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<String, u16>>();
+        assert_eq!(registry.ports, expected_ports);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_missing() -> Result<(), ApplicationError> {
+        let config = Config::default();
+        let registry = PortRegistry::load(PathBuf::from("./missing_registry.toml"), &config)?;
+        assert_eq!(registry.ports.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_normalizes() -> Result<(), ApplicationError> {
+        let config = Config {
+            ranges: vec![(4000, 4999)],
+            ..Default::default()
+        };
+        let registry = get_tempfile_registry("test_load_normalizes.toml", Some(config));
+        assert!(registry
+            .ports
+            .values()
+            .into_iter()
+            .all(|port| (3000..=3999).contains(port)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_creates_file() -> Result<(), ApplicationError> {
+        let config = Config::default();
+        let ports = vec![
+            ("app1".to_string(), 3001),
+            ("app2".to_string(), 3002),
+            ("app3".to_string(), 3003),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<String, u16>>();
+        let registry_path = temp_dir()
+            .join("portman")
+            .join("deeply")
+            .join("nested")
+            .join("path")
+            .join("test_save_creates_file.toml");
+        fs::remove_dir_all(temp_dir().join("portman").join("deeply")).unwrap_or(());
+        let registry = PortRegistry {
+            path: registry_path.clone(),
+            ports,
+            allocator: PortAllocator::new(config.get_valid_ports()),
+        };
+        registry.save()?;
+        assert!(std::path::Path::exists(&registry_path));
+        Ok(())
+    }
+
+    #[test]
+    fn test_get() -> Result<(), ApplicationError> {
+        let registry = get_fixture_registry()?;
+        assert_eq!(registry.get("app1"), Some(3001));
+        assert_eq!(registry.get("app4"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_allocate() -> Result<(), ApplicationError> {
+        let mut registry = get_tempfile_registry("test_allocate.toml", None);
+        registry.allocate("app4")?;
+        assert!(registry.ports.get("app4").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn test_release() -> Result<(), ApplicationError> {
+        let mut registry = get_tempfile_registry("test_release.toml", None);
+        registry.release("app2")?;
+        assert!(registry.ports.get("app2").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_release_all() -> Result<(), ApplicationError> {
+        let mut registry = get_tempfile_registry("test_release_all.toml", None);
+        registry.release_all()?;
+        assert!(registry.ports.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_caddyfile() -> Result<(), ApplicationError> {
+        let registry = get_fixture_registry()?;
+        assert_eq!(
+            registry.caddyfile(),
+            "# WARNING: This file is automatically generated by portman. Any manual edits will be overridden.
+
+app1.localhost {
+\treverse_proxy 127.0.0.1:3001
+}
+
+app2.localhost {
+\treverse_proxy 127.0.0.1:3002
+}
+
+app3.localhost {
+\treverse_proxy 127.0.0.1:3003
+}
+"
+        );
+        Ok(())
     }
 }
