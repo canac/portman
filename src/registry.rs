@@ -1,45 +1,13 @@
+use crate::allocator::PortAllocator;
 use crate::config::Config;
 use crate::error::ApplicationError;
-use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     fs,
     path::PathBuf,
     process::{Command, Stdio},
 };
-
-struct PortAllocator {
-    available_ports: HashSet<u16>,
-    rng: ThreadRng,
-}
-
-impl PortAllocator {
-    // Create a new port allocator that allocates from the provided available ports
-    pub fn new(available_ports: impl Iterator<Item = u16>) -> Self {
-        PortAllocator {
-            available_ports: available_ports.collect(),
-            rng: rand::thread_rng(),
-        }
-    }
-
-    // Allocate a new port, using the desired port if it is provided and is valid
-    pub fn allocate(&mut self, desired_port: Option<u16>) -> Option<u16> {
-        let allocated_port = desired_port
-            .and_then(|port| {
-                if self.available_ports.contains(&port) {
-                    Some(port)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| self.available_ports.iter().choose(&mut self.rng).cloned());
-        if let Some(port) = allocated_port {
-            self.available_ports.remove(&port);
-        }
-        allocated_port
-    }
-}
 
 // The port registry data that will be serialized and deserialized in the database
 #[derive(Default, Deserialize, Serialize)]
