@@ -60,7 +60,6 @@ fn run() -> Result<(), ApplicationError> {
         }
         Config::default()
     });
-    let mut registry = PortRegistry::load(registry_path.clone(), &config)?;
 
     let cli = Cli::from_args();
     match cli {
@@ -83,6 +82,7 @@ fn run() -> Result<(), ApplicationError> {
             project_name,
             allocate,
         } => {
+            let mut registry = PortRegistry::load(registry_path, &config)?;
             let project = get_project_name(project_name)?;
             let port = match registry.get(project.as_str()) {
                 Some(port) => Ok(port),
@@ -98,6 +98,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Allocate { project_name } => {
+            let mut registry = PortRegistry::load(registry_path, &config)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.allocate(project.as_str())?;
             println!("Allocated port {} for project {}", port, project);
@@ -107,6 +108,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Release { project_name } => {
+            let mut registry = PortRegistry::load(registry_path, &config)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.release(project.as_str())?;
             println!("Released port {} for project {}", port, project);
@@ -116,15 +118,18 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Reset => {
+            let mut registry = PortRegistry::load(registry_path, &config)?;
             registry.release_all()?;
             println!("All allocated ports have been released")
         }
 
         Cli::Caddyfile => {
+            let registry = PortRegistry::load(registry_path, &config)?;
             print!("{}", registry.caddyfile())
         }
 
         Cli::ReloadCaddy => {
+            let registry = PortRegistry::load(registry_path, &config)?;
             registry.reload_caddy()?;
             println!("caddy was successfully reloaded")
         }
