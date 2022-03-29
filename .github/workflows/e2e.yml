@@ -1,9 +1,5 @@
 name: End to end tests
-on:
-  pull_request:
-  push:
-    branches:
-      - "*"
+on: [push, pull_request]
 
 jobs:
   test:
