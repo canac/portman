@@ -45,8 +45,11 @@ pub enum ApplicationError {
     #[error("Error executing command\nError: {0}")]
     Exec(std::io::Error),
 
-    #[error("Error reading environment variable\nError: {0}")]
-    ReadEnv(std::env::VarError),
+    #[error("Error reading environment variable {name:?}\nError: {var_err}")]
+    ReadEnv {
+        name: std::ffi::OsString,
+        var_err: std::env::VarError,
+    },
 
     #[error("Error writing Caddyfile\nError: {0}")]
     WriteCaddyfile(std::io::Error),

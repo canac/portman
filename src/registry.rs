@@ -142,7 +142,12 @@ impl PortRegistry {
     pub fn reload_caddy(&self) -> Result<(), ApplicationError> {
         // Write the caddyfile to a file
         let caddyfile = self.caddyfile();
-        let brew_prefix = std::env::var("HOMEBREW_PREFIX").map_err(ApplicationError::ReadEnv)?;
+        let var_name = std::ffi::OsString::from("HOMEBREW_PREFIX");
+        let brew_prefix =
+            std::env::var(var_name.clone()).map_err(|var_err| ApplicationError::ReadEnv {
+                name: var_name,
+                var_err,
+            })?;
         let caddyfile_path = PathBuf::from(brew_prefix).join("etc").join("Caddyfile");
         fs::write(caddyfile_path.clone(), caddyfile).map_err(ApplicationError::WriteCaddyfile)?;
 

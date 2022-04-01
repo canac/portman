@@ -8,6 +8,14 @@ pub enum InitShell {
 }
 
 #[derive(StructOpt)]
+pub enum Config {
+    #[structopt(about = "Display the current configuration")]
+    Show,
+    #[structopt(about = "Open the configuration file in $EDITOR")]
+    Edit,
+}
+
+#[derive(StructOpt)]
 #[structopt(
     name = "portman",
     about = "Manage local port allocations",
@@ -24,8 +32,8 @@ pub enum Cli {
         shell: InitShell,
     },
 
-    #[structopt(about = "Display the current configuration")]
-    Config,
+    #[structopt(about = "Manage the configuration")]
+    Config(Config),
 
     #[structopt(about = "Print the port allocated for a project")]
     Get {

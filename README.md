@@ -88,16 +88,20 @@ Prints a valid Caddyfile that reverse-proxies all registered projects from their
 
 Regenerates the Caddyfile and reloads the caddy config. portman updates the Caddyfile and reloads caddy whenever it makes changes, so this command should only be necessary if something else outside of portman's control is manipulating the Caddyfile or caddy config.
 
-### `portman config`
+### `portman config show`
 
 Prints the configuration that is currently being used.
 
+### `portman config edit`
+
+Opens the configuration file using the command in the `$EDITOR` environment variable.
+
 ## Configuring portman
 
-portman has a few configuration parameters that can be tweaked. Run `portman config` to locate the default config file location. The config file location can also be changed by setting the `PORTMAN_CONFIG` environment variable.
+portman has a few configuration parameters that can be tweaked. Run `portman config show` to locate the default config file location. Run `portman config edit` to open the configuration file with `$EDITOR`. The config file location can also be changed by setting the `PORTMAN_CONFIG` environment variable.
 
 ```sh
-PORTMAN_CONFIG=~/portman.toml portman config
+PORTMAN_CONFIG=~/portman.toml portman config show
 ```
 
 The config file is in TOML format. This is the default config:

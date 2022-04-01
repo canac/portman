@@ -5,17 +5,18 @@ mod error;
 mod init;
 mod registry;
 
-use crate::cli::{Cli, InitShell};
+use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::error::ApplicationError;
 use crate::init::init_fish;
 use crate::registry::PortRegistry;
 use regex::Regex;
+use std::process;
 use structopt::StructOpt;
 
 // Extract the name of the project using the git repo in the current directory
 fn extract_project_name() -> Result<String, ApplicationError> {
-    let stdout = std::process::Command::new("git")
+    let stdout = process::Command::new("git")
         .args(["config", "--get", "remote.origin.url"])
         .output()
         .map_err(ApplicationError::Exec)?
@@ -69,14 +70,35 @@ fn run() -> Result<(), ApplicationError> {
             }
         },
 
-        Cli::Config => {
-            println!(
-                "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{}",
-                config_path.to_string_lossy(),
-                registry_path.to_string_lossy(),
-                config
-            )
-        }
+        Cli::Config(subcommand) => match subcommand {
+            ConfigSubcommand::Show => {
+                println!(
+                    "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{}",
+                    config_path.to_string_lossy(),
+                    registry_path.to_string_lossy(),
+                    config
+                )
+            }
+            ConfigSubcommand::Edit => {
+                let var_name = std::ffi::OsString::from("EDITOR");
+                let editor = std::env::var(var_name.clone()).map_err(|var_err| {
+                    ApplicationError::ReadEnv {
+                        name: var_name,
+                        var_err,
+                    }
+                })?;
+                println!(
+                    "Opening \"{}\" with \"{}\"",
+                    config_path.to_string_lossy(),
+                    editor,
+                );
+                let status = process::Command::new(editor)
+                    .arg(config_path)
+                    .status()
+                    .map_err(ApplicationError::Exec)?;
+                process::exit(status.code().unwrap_or(1))
+            }
+        },
 
         Cli::Get {
             project_name,
@@ -141,6 +163,6 @@ fn run() -> Result<(), ApplicationError> {
 fn main() {
     if let Err(err) = run() {
         eprintln!("{}", err);
-        std::process::exit(1);
+        process::exit(1);
     }
 }
