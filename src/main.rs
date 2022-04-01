@@ -10,9 +10,9 @@ use crate::config::Config;
 use crate::error::ApplicationError;
 use crate::init::init_fish;
 use crate::registry::PortRegistry;
+use clap::StructOpt;
 use regex::Regex;
 use std::process;
-use structopt::StructOpt;
 
 // Extract the name of the project using the git repo in the current directory
 fn extract_project_name() -> Result<String, ApplicationError> {
@@ -62,7 +62,7 @@ fn run() -> Result<(), ApplicationError> {
         Config::default()
     });
 
-    let cli = Cli::from_args();
+    let cli = Cli::parse();
     match cli {
         Cli::Init { shell } => match shell {
             InitShell::Fish => {
