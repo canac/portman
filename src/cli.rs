@@ -16,10 +16,10 @@ pub enum Config {
 
 #[derive(Parser)]
 #[clap(
-    name = "portman",
-    about = "Manage local port allocations",
-    version = "0.1.0",
-    author = "Caleb Cox"
+    name = env!("CARGO_PKG_NAME"),
+    about = env!("CARGO_PKG_DESCRIPTION"),
+    version = env!("CARGO_PKG_VERSION"),
+    author = env!("CARGO_PKG_AUTHORS")
 )]
 pub enum Cli {
     /// Print the shell configuration command to initialize portman
