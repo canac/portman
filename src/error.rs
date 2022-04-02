@@ -51,6 +51,9 @@ pub enum ApplicationError {
         var_err: std::env::VarError,
     },
 
+    #[error("Error reading Caddyfile\nError: {0}")]
+    ReadCaddyfile(std::io::Error),
+
     #[error("Error writing Caddyfile\nError: {0}")]
     WriteCaddyfile(std::io::Error),
 
