@@ -125,7 +125,7 @@ Defaults to `[]` if omitted.
 
 ## Setting up DNS
 
-Chromium-based browsers automatically resolve the `localhost` tld to 127.0.0.1. To use other browsers or other tools, you may need to configure your DNS to resolve _.localhost to 127.0.0.1. I use [NextDNS](https://nextdns.io) for ad blocking, and it's trivial to add a rewrite in NextDNS for _.localhost domains.
+Chromium-based browsers automatically resolve the `localhost` tld to 127.0.0.1. To use other browsers or other tools, you may need to configure your DNS to resolve \*.localhost to 127.0.0.1. I use [NextDNS](https://nextdns.io) for ad blocking, and it's trivial to add a rewrite in NextDNS for \*.localhost domains.
 
 ## Bonus: Starship integration
 
