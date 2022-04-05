@@ -62,7 +62,7 @@ jobs:
         if: runner.os != 'Windows'
         run: >
           tar -cv
-          LICENSE README.md
+          LICENSE README.md default_config.toml
           man/
           -C contrib/ completions/ -C ../
           -C target/${{ matrix.target }}/release/ portman
@@ -71,7 +71,7 @@ jobs:
         if: runner.os == 'Windows'
         run: >
           7z a ${{ env.ARTIFACT_NAME }}.zip
-          LICENSE README.md
+          LICENSE README.md default_config.toml
           ./man/
           ./contrib/completions/
           ./target/${{ matrix.target }}/release/portman.exe

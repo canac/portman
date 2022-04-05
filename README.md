@@ -98,7 +98,7 @@ Opens the configuration file using the command in the `$EDITOR` environment vari
 
 ## Configuring portman
 
-portman has a few configuration parameters that can be tweaked. Run `portman config show` to locate the default config file location. Run `portman config edit` to open the configuration file with `$EDITOR`. The config file location can also be changed by setting the `PORTMAN_CONFIG` environment variable.
+portman has a few configuration parameters that can be tweaked. Run `portman config show` to locate the default config file location. Run `portman config edit` to open the configuration file with `$EDITOR`. You might want to copy the contents of the [`default_config.toml`](default_config.toml) file as a starting point and then make your desired changes. The config file location can also be changed by setting the `PORTMAN_CONFIG` environment variable.
 
 ```sh
 PORTMAN_CONFIG=~/portman.toml portman config show

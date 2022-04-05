@@ -113,6 +113,15 @@ mod tests {
     }
 
     #[test]
+    fn test_default_config() -> Result<(), ApplicationError> {
+        let config = Config::load(PathBuf::from("./default_config.toml"))?.unwrap();
+        let default_config = Config::default();
+        assert_eq!(config.ranges, default_config.ranges);
+        assert_eq!(config.reserved, default_config.reserved);
+        Ok(())
+    }
+
+    #[test]
     fn test_missing_config() -> Result<(), ApplicationError> {
         let config = Config::load(PathBuf::from("./missing_config.toml"))?;
         assert!(config.is_none());
