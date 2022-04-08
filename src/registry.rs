@@ -1,6 +1,7 @@
 use crate::allocator::PortAllocator;
 use crate::config::Config;
 use crate::error::ApplicationError;
+use crate::registry_store::RegistryStore;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,33 +12,24 @@ use std::{
 };
 
 // The port registry data that will be serialized and deserialized in the database
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 pub struct RegistryData {
-    ports: BTreeMap<String, u16>,
+    pub ports: BTreeMap<String, u16>,
 }
 
 pub struct PortRegistry {
-    path: PathBuf,
+    store: Box<dyn RegistryStore>,
     ports: BTreeMap<String, u16>,
     allocator: PortAllocator,
 }
 
 impl PortRegistry {
-    // Load a port registry from the file
-    pub fn load(path: PathBuf, config: &Config) -> Result<Self, ApplicationError> {
-        let registry_data = match fs::read_to_string(&path) {
-            Ok(registry_str) => {
-                toml::from_str(&registry_str).map_err(ApplicationError::DeserializeRegistry)
-            }
-            Err(io_err) => match io_err.kind() {
-                // If the file doesn't exist, give it a default value of an empty port registry
-                std::io::ErrorKind::NotFound => Ok(RegistryData::default()),
-                _ => Err(ApplicationError::ReadRegistry {
-                    path: path.clone(),
-                    io_err,
-                }),
-            },
-        }?;
+    // Create a new port registry
+    pub fn new(
+        registry_store: impl RegistryStore + 'static,
+        config: &Config,
+    ) -> Result<Self, ApplicationError> {
+        let registry_data = registry_store.load()?;
 
         // Validate all ports in the registry against the required config and
         // regenerate invalid ones as necessary
@@ -56,8 +48,8 @@ impl PortRegistry {
             })
             .collect::<Option<BTreeMap<_, _>>>()
             .ok_or(ApplicationError::AllPortsAllocated)?;
-        let registry = PortRegistry {
-            path,
+        let registry = Self {
+            store: Box::new(registry_store),
             ports: validated_ports,
             allocator,
         };
@@ -69,21 +61,9 @@ impl PortRegistry {
 
     // Save a port registry to the file
     pub fn save(&self) -> Result<(), ApplicationError> {
-        let registry_str = toml::to_string(&RegistryData {
+        self.store.save(&RegistryData {
             ports: self.ports.clone(),
         })
-        .map_err(ApplicationError::SerializeRegistry)?;
-
-        let parent_dir = self
-            .path
-            .parent()
-            .ok_or_else(|| ApplicationError::WriteRegistry(self.path.clone()))?;
-        fs::create_dir_all(parent_dir)
-            .map_err(|_| ApplicationError::WriteRegistry(self.path.clone()))?;
-        fs::write(self.path.clone(), registry_str)
-            .map_err(|_| ApplicationError::WriteRegistry(self.path.clone()))?;
-
-        self.reload_caddy()
     }
 
     // Get a project's port from the registry
@@ -210,12 +190,24 @@ impl PortRegistry {
 
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
-
     use super::*;
 
-    // Return a PortRegistry backed by a tempfile, so that save() won't overwrite a fixture file
-    fn get_tempfile_registry(registry_name: &str, config: Option<Config>) -> PortRegistry {
+    struct RegistryMockStore {
+        contents: RegistryData,
+    }
+
+    impl RegistryStore for RegistryMockStore {
+        fn load(&self) -> Result<RegistryData, ApplicationError> {
+            Ok(self.contents.clone())
+        }
+
+        fn save(&self, _: &RegistryData) -> Result<(), ApplicationError> {
+            Ok(())
+        }
+    }
+
+    // Return a PortRegistry that won't save to the filesystem
+    fn get_mocked_registry(config: Option<Config>) -> Result<PortRegistry, ApplicationError> {
         let ports = vec![
             ("app1".to_string(), 3001),
             ("app2".to_string(), 3002),
@@ -223,20 +215,10 @@ mod tests {
         ]
         .into_iter()
         .collect::<BTreeMap<String, u16>>();
-        let registry_path = temp_dir()
-            .join("portman")
-            .join(PathBuf::from(registry_name));
-        PortRegistry {
-            path: registry_path,
-            ports,
-            allocator: PortAllocator::new(config.unwrap_or_default().get_valid_ports()),
-        }
-    }
-
-    // Return a PortRegistry backed by a fixture file
-    fn get_fixture_registry() -> Result<PortRegistry, ApplicationError> {
-        let config = Config::default();
-        PortRegistry::load(PathBuf::from("./fixtures/registry.toml"), &config)
+        let mock_store = RegistryMockStore {
+            contents: RegistryData { ports },
+        };
+        PortRegistry::new(mock_store, &config.unwrap_or_default())
     }
 
     // Convert Err(ApplicationError::Exec(_)) into Ok(()), leaving all other results untouched
@@ -250,72 +232,23 @@ mod tests {
     }
 
     #[test]
-    fn test_load() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
-        let expected_ports = vec![
-            ("app1".to_string(), 3001),
-            ("app2".to_string(), 3002),
-            ("app3".to_string(), 3003),
-        ]
-        .into_iter()
-        .collect::<BTreeMap<String, u16>>();
-        assert_eq!(registry.ports, expected_ports);
-        Ok(())
-    }
-
-    #[test]
-    fn test_load_missing() -> Result<(), ApplicationError> {
-        let config = Config::default();
-        let registry = PortRegistry::load(PathBuf::from("./missing_registry.toml"), &config)?;
-        assert_eq!(registry.ports.len(), 0);
-        Ok(())
-    }
-
-    #[test]
     fn test_load_normalizes() -> Result<(), ApplicationError> {
         let config = Config {
             ranges: vec![(4000, 4999)],
             ..Default::default()
         };
-        let registry = get_tempfile_registry("test_load_normalizes.toml", Some(config));
+        let registry = get_mocked_registry(Some(config))?;
         assert!(registry
             .ports
             .values()
             .into_iter()
-            .all(|port| (3000..=3999).contains(port)));
-        Ok(())
-    }
-
-    #[test]
-    fn test_save_creates_file() -> Result<(), ApplicationError> {
-        let config = Config::default();
-        let ports = vec![
-            ("app1".to_string(), 3001),
-            ("app2".to_string(), 3002),
-            ("app3".to_string(), 3003),
-        ]
-        .into_iter()
-        .collect::<BTreeMap<String, u16>>();
-        let registry_path = temp_dir()
-            .join("portman")
-            .join("deeply")
-            .join("nested")
-            .join("path")
-            .join("test_save_creates_file.toml");
-        fs::remove_dir_all(temp_dir().join("portman").join("deeply")).unwrap_or(());
-        let registry = PortRegistry {
-            path: registry_path.clone(),
-            ports,
-            allocator: PortAllocator::new(config.get_valid_ports()),
-        };
-        suppress_exec_error(registry.save())?;
-        assert!(std::path::Path::exists(&registry_path));
+            .all(|port| (4000..=4999).contains(port)));
         Ok(())
     }
 
     #[test]
     fn test_get() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
+        let registry = get_mocked_registry(None)?;
         assert_eq!(registry.get("app1"), Some(3001));
         assert_eq!(registry.get("app4"), None);
         Ok(())
@@ -323,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_allocate() -> Result<(), ApplicationError> {
-        let mut registry = get_tempfile_registry("test_allocate.toml", None);
+        let mut registry = get_mocked_registry(None)?;
         suppress_exec_error(registry.allocate("app4"))?;
         assert!(registry.ports.get("app4").is_some());
         Ok(())
@@ -331,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_release() -> Result<(), ApplicationError> {
-        let mut registry = get_tempfile_registry("test_release.toml", None);
+        let mut registry = get_mocked_registry(None)?;
         suppress_exec_error(registry.release("app2"))?;
         assert!(registry.ports.get("app2").is_none());
         Ok(())
@@ -339,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_release_all() -> Result<(), ApplicationError> {
-        let mut registry = get_tempfile_registry("test_release_all.toml", None);
+        let mut registry = get_mocked_registry(None)?;
         suppress_exec_error(registry.release_all())?;
         assert!(registry.ports.is_empty());
         Ok(())
@@ -364,21 +297,21 @@ app3.localhost {
 
     #[test]
     fn test_caddyfile() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
+        let registry = get_mocked_registry(None)?;
         assert_eq!(registry.caddyfile(), GOLDEN_CADDYFILE);
         Ok(())
     }
 
     #[test]
     fn test_merge_caddyfile_no_existing() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
+        let registry = get_mocked_registry(None)?;
         assert_eq!(registry.merge_caddyfile(None)?, GOLDEN_CADDYFILE);
         Ok(())
     }
 
     #[test]
     fn test_merge_caddyfile_update() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
+        let registry = get_mocked_registry(None)?;
         assert_eq!(
             registry.merge_caddyfile(Some(
                 "# Prefix\n\n# portman begin\n# portman end\n\n# Suffix\n".to_string()
@@ -390,7 +323,7 @@ app3.localhost {
 
     #[test]
     fn test_merge_caddyfile_prepend() -> Result<(), ApplicationError> {
-        let registry = get_fixture_registry()?;
+        let registry = get_mocked_registry(None)?;
         assert_eq!(
             registry.merge_caddyfile(Some("# Suffix\n".to_string()))?,
             format!("{}\n# Suffix\n", GOLDEN_CADDYFILE)

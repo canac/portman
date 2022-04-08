@@ -4,12 +4,14 @@ mod config;
 mod error;
 mod init;
 mod registry;
+mod registry_store;
 
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::error::ApplicationError;
 use crate::init::init_fish;
 use crate::registry::PortRegistry;
+use crate::registry_store::RegistryFileStore;
 use clap::StructOpt;
 use regex::Regex;
 use std::process;
@@ -52,6 +54,7 @@ fn run() -> Result<(), ApplicationError> {
         .ok_or(ApplicationError::ProjectDirs)?;
     let data_dir = project_dirs.data_local_dir();
     let registry_path = data_dir.join("registry.toml");
+    let registry_store = RegistryFileStore::new(registry_path.clone());
     let config_env = std::env::var_os("PORTMAN_CONFIG");
     let config_path = match config_env.clone() {
         Some(config_path) => std::path::PathBuf::from(config_path),
@@ -106,7 +109,7 @@ fn run() -> Result<(), ApplicationError> {
             project_name,
             allocate,
         } => {
-            let mut registry = PortRegistry::load(registry_path, &config)?;
+            let mut registry = PortRegistry::new(registry_store, &config)?;
             let project = get_project_name(project_name)?;
             let port = match registry.get(project.as_str()) {
                 Some(port) => Ok(port),
@@ -122,7 +125,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Allocate { project_name } => {
-            let mut registry = PortRegistry::load(registry_path, &config)?;
+            let mut registry = PortRegistry::new(registry_store, &config)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.allocate(project.as_str())?;
             println!("Allocated port {} for project {}", port, project);
@@ -132,7 +135,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Release { project_name } => {
-            let mut registry = PortRegistry::load(registry_path, &config)?;
+            let mut registry = PortRegistry::new(registry_store, &config)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.release(project.as_str())?;
             println!("Released port {} for project {}", port, project);
@@ -142,18 +145,18 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Reset => {
-            let mut registry = PortRegistry::load(registry_path, &config)?;
+            let mut registry = PortRegistry::new(registry_store, &config)?;
             registry.release_all()?;
             println!("All allocated ports have been released")
         }
 
         Cli::Caddyfile => {
-            let registry = PortRegistry::load(registry_path, &config)?;
+            let registry = PortRegistry::new(registry_store, &config)?;
             print!("{}", registry.caddyfile())
         }
 
         Cli::ReloadCaddy => {
-            let registry = PortRegistry::load(registry_path, &config)?;
+            let registry = PortRegistry::new(registry_store, &config)?;
             registry.reload_caddy()?;
             println!("caddy was successfully reloaded")
         }
