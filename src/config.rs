@@ -157,4 +157,16 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_display() -> Result<(), ApplicationError> {
+        let config = Config::from_toml(
+            "ranges = [[3000, 3999], [4500, 4999]]\nreserved = [3000, 3100, 3200]",
+        )?;
+        assert_eq!(
+            format!("{}", config),
+            "Allowed port ranges: 3000-3999 & 4500-4999\nReserved ports: 3000, 3100, 3200"
+        );
+        Ok(())
+    }
 }
