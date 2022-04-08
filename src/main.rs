@@ -14,16 +14,8 @@ use clap::StructOpt;
 use regex::Regex;
 use std::process;
 
-// Extract the name of the project using the git repo in the current directory
-fn extract_project_name() -> Result<String, ApplicationError> {
-    let stdout = process::Command::new("git")
-        .args(["config", "--get", "remote.origin.url"])
-        .output()
-        .map_err(ApplicationError::Exec)?
-        .stdout;
-    let repo = std::str::from_utf8(&stdout)
-        .map_err(ApplicationError::ReadGitStdout)?
-        .trim_end();
+// Extract the name of a project from it's git repo URL
+fn project_name_from_repo(repo: &str) -> Result<String, ApplicationError> {
     lazy_static::lazy_static! {
         static ref RE: Regex =
             Regex::new(r"^https://github\.com/(?:.+)/(?P<project>.+?)(?:\.git)?$").unwrap();
@@ -39,10 +31,20 @@ fn extract_project_name() -> Result<String, ApplicationError> {
 // Get the project name using the name provided on the cli if present,
 // defaulting to extracting it from the git repo in the current directory
 fn get_project_name(cli_project_name: Option<String>) -> Result<String, ApplicationError> {
-    Ok(match cli_project_name {
-        Some(project) => project,
-        None => extract_project_name()?,
-    })
+    match cli_project_name {
+        Some(project) => Ok(project),
+        None => {
+            let stdout = process::Command::new("git")
+                .args(["config", "--get", "remote.origin.url"])
+                .output()
+                .map_err(ApplicationError::Exec)?
+                .stdout;
+            let repo = std::str::from_utf8(&stdout)
+                .map_err(ApplicationError::ReadGitStdout)?
+                .trim_end();
+            project_name_from_repo(repo)
+        }
+    }
 }
 
 fn run() -> Result<(), ApplicationError> {
@@ -164,5 +166,43 @@ fn main() {
     if let Err(err) = run() {
         eprintln!("{}", err);
         process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_basic_project_name() -> Result<(), ApplicationError> {
+        assert_eq!(
+            project_name_from_repo("https://github.com/user/project-name")?,
+            "project-name".to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn get_project_name_with_extension() -> Result<(), ApplicationError> {
+        assert_eq!(
+            project_name_from_repo("https://github.com/user/project-name.git")?,
+            "project-name".to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn get_project_name_invalid() -> Result<(), ApplicationError> {
+        assert!(matches!(
+            project_name_from_repo("https://gitlab.com/user/project-name"),
+            Err(ApplicationError::ExtractProject)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn get_portman_project_name() -> Result<(), ApplicationError> {
+        assert_eq!(get_project_name(None)?, "portman".to_string());
+        Ok(())
     }
 }
