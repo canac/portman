@@ -1,5 +1,4 @@
 use crate::allocator::PortAllocator;
-use crate::config::Config;
 use crate::error::ApplicationError;
 use crate::registry_store::RegistryStore;
 use regex::Regex;
@@ -27,14 +26,14 @@ impl PortRegistry {
     // Create a new port registry
     pub fn new(
         registry_store: impl RegistryStore + 'static,
-        config: &Config,
+        port_allocator: PortAllocator,
     ) -> Result<Self, ApplicationError> {
         let registry_data = registry_store.load()?;
 
         // Validate all ports in the registry against the required config and
         // regenerate invalid ones as necessary
         let mut changed = false;
-        let mut allocator = PortAllocator::new(config.get_valid_ports());
+        let mut allocator = port_allocator;
         let validated_ports = registry_data
             .ports
             .into_iter()
@@ -190,6 +189,9 @@ impl PortRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::allocator::RandomPortChooser;
+    use crate::config::Config;
+
     use super::*;
 
     struct RegistryMockStore {
@@ -218,7 +220,9 @@ mod tests {
         let mock_store = RegistryMockStore {
             contents: RegistryData { ports },
         };
-        PortRegistry::new(mock_store, &config.unwrap_or_default())
+        let config = config.unwrap_or_default();
+        let mock_allocator = PortAllocator::new(config.get_valid_ports(), RandomPortChooser::new());
+        PortRegistry::new(mock_store, mock_allocator)
     }
 
     // Convert Err(ApplicationError::Exec(_)) into Ok(()), leaving all other results untouched

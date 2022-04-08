@@ -6,6 +6,7 @@ mod init;
 mod registry;
 mod registry_store;
 
+use crate::allocator::{PortAllocator, RandomPortChooser};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::error::ApplicationError;
@@ -66,6 +67,7 @@ fn run() -> Result<(), ApplicationError> {
         }
         Config::default()
     });
+    let port_allocator = PortAllocator::new(config.get_valid_ports(), RandomPortChooser::new());
 
     let cli = Cli::parse();
     match cli {
@@ -109,7 +111,7 @@ fn run() -> Result<(), ApplicationError> {
             project_name,
             allocate,
         } => {
-            let mut registry = PortRegistry::new(registry_store, &config)?;
+            let mut registry = PortRegistry::new(registry_store, port_allocator)?;
             let project = get_project_name(project_name)?;
             let port = match registry.get(project.as_str()) {
                 Some(port) => Ok(port),
@@ -125,7 +127,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Allocate { project_name } => {
-            let mut registry = PortRegistry::new(registry_store, &config)?;
+            let mut registry = PortRegistry::new(registry_store, port_allocator)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.allocate(project.as_str())?;
             println!("Allocated port {} for project {}", port, project);
@@ -135,7 +137,7 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Release { project_name } => {
-            let mut registry = PortRegistry::new(registry_store, &config)?;
+            let mut registry = PortRegistry::new(registry_store, port_allocator)?;
             let project = get_project_name(project_name.clone())?;
             let port = registry.release(project.as_str())?;
             println!("Released port {} for project {}", port, project);
@@ -145,18 +147,18 @@ fn run() -> Result<(), ApplicationError> {
         }
 
         Cli::Reset => {
-            let mut registry = PortRegistry::new(registry_store, &config)?;
+            let mut registry = PortRegistry::new(registry_store, port_allocator)?;
             registry.release_all()?;
             println!("All allocated ports have been released")
         }
 
         Cli::Caddyfile => {
-            let registry = PortRegistry::new(registry_store, &config)?;
+            let registry = PortRegistry::new(registry_store, port_allocator)?;
             print!("{}", registry.caddyfile())
         }
 
         Cli::ReloadCaddy => {
-            let registry = PortRegistry::new(registry_store, &config)?;
+            let registry = PortRegistry::new(registry_store, port_allocator)?;
             registry.reload_caddy()?;
             println!("caddy was successfully reloaded")
         }
