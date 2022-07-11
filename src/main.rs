@@ -152,6 +152,13 @@ fn run() -> Result<(), ApplicationError> {
             println!("All allocated ports have been released")
         }
 
+        Cli::List => {
+            let registry = PortRegistry::new(registry_store, port_allocator)?;
+            for (project, port) in registry.iter() {
+                println!("{} :{}", project, port);
+            }
+        }
+
         Cli::Caddyfile => {
             let registry = PortRegistry::new(registry_store, port_allocator)?;
             print!("{}", registry.caddyfile())

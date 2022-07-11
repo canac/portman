@@ -58,6 +58,9 @@ pub enum Cli {
     /// Reset all of the port assignments
     Reset,
 
+    /// List all of the port assignments
+    List,
+
     /// Print the generated Caddyfile for the allocated ports
     Caddyfile,
 

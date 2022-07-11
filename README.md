@@ -76,6 +76,10 @@ Prints the port allocated for a project. If `project-name` is not provided, the 
 
 Releases the port allocated for a project. If `project-name` is not provided, the name of the project is extracted from the current git repo's GitHub URL.
 
+### `portman list`
+
+Lists all the ports assigned to all projects in alphabetical order.
+
 ### `portman reset`
 
 Releases all ports allocated for all projects.

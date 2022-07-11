@@ -102,6 +102,11 @@ impl PortRegistry {
         self.save()
     }
 
+    // Iterate over all port assignments
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &u16)> {
+        self.ports.iter()
+    }
+
     // Return the generated Caddyfile
     pub fn caddyfile(&self) -> String {
         let caddyfile = self
