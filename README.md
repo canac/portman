@@ -12,8 +12,7 @@
 
 ```sh
 # Install portman CLI
-brew tap canac/homebrew-tap
-brew install portman
+brew install canac/tap/portman
 
 # Install fish shell integration
 echo "portman init fish | source" >> ~/.config/fish/config.fish
