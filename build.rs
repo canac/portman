@@ -1,3 +1,6 @@
+#[path = "src/cli.rs"]
+mod cli;
+
 use clap::CommandFactory;
 use std::{
     fs, io,
@@ -14,9 +17,6 @@ fn main() {
 }
 
 fn generate_completions() -> io::Result<()> {
-    #[path = "src/cli.rs"]
-    mod cli;
-
     use clap_complete::generate_to;
     use clap_complete::shells::{Bash, Elvish, Fish, PowerShell, Zsh};
     use clap_complete_fig::Fig;
@@ -37,9 +37,6 @@ fn generate_completions() -> io::Result<()> {
 }
 
 fn generate_manpage() -> io::Result<()> {
-    #[path = "src/cli.rs"]
-    mod cli;
-
     // Generate man pages for this command and all of its subcommands
     fn gen_manpage_recursive(cmd: clap::Command, out_dir: &Path) -> io::Result<()> {
         let name = String::from(cmd.get_name());
