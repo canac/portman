@@ -15,12 +15,7 @@ pub enum Config {
 }
 
 #[derive(Parser)]
-#[clap(
-    name = env!("CARGO_PKG_NAME"),
-    about = env!("CARGO_PKG_DESCRIPTION"),
-    version = env!("CARGO_PKG_VERSION"),
-    author = env!("CARGO_PKG_AUTHORS")
-)]
+#[clap(about, version, author)]
 pub enum Cli {
     /// Print the shell configuration command to initialize portman
     Init {
