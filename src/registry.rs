@@ -62,7 +62,12 @@ impl PortRegistry {
     pub fn save(&self) -> Result<(), ApplicationError> {
         self.store.save(&RegistryData {
             ports: self.ports.clone(),
-        })
+        })?;
+        if let Err(err) = self.reload_caddy() {
+            // An error reloading Caddy is just a warning, not a fatal error
+            println!("Warning: couldn't reload Caddy config.\n\n{err}");
+        }
+        Ok(())
     }
 
     // Get a project's port from the registry
