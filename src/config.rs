@@ -1,9 +1,11 @@
-use crate::error::ApplicationError;
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
-    path::PathBuf,
+    path::Path,
 };
+
+use crate::dependencies::ReadFile;
 
 fn default_ranges() -> Vec<(u16, u16)> {
     vec![(3000, 3999)]
@@ -22,7 +24,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             ranges: default_ranges(),
-            reserved: Default::default(),
+            reserved: vec![],
         }
     }
 }
@@ -30,33 +32,29 @@ impl Default for Config {
 impl Config {
     // Load the configuration from the file
     // Return None if the file doesn't exist
-    pub fn load(path: PathBuf) -> Result<Option<Self>, ApplicationError> {
-        match std::fs::read_to_string(&path) {
-            Ok(config_str) => Ok(Some(Self::from_toml(&config_str)?)),
-            Err(io_err) => match io_err.kind() {
-                // If the file doesn't exist, load the default config
-                std::io::ErrorKind::NotFound => Ok(None),
-                _ => Err(ApplicationError::ReadConfig { path, io_err }),
-            },
-        }
+    pub fn load(deps: &impl ReadFile, path: &Path) -> Result<Option<Self>> {
+        deps.read_file(path)
+            .with_context(|| format!("Failed to read config at \"{}\"", path.to_string_lossy()))?
+            .map(|config_str| Self::from_toml(&config_str))
+            .transpose()
+            .with_context(|| {
+                format!(
+                    "Failed to deserialize config at \"{}\"",
+                    path.to_string_lossy()
+                )
+            })
     }
 
     // Return a new configuration from a TOML string
-    fn from_toml(toml_str: &str) -> Result<Self, ApplicationError> {
-        let config: Config =
-            toml::from_str(toml_str).map_err(ApplicationError::DeserializeConfig)?;
+    fn from_toml(toml_str: &str) -> Result<Self> {
+        let config: Config = toml::from_str(toml_str).context("Failed to deserialize config")?;
 
         if config.ranges.is_empty() {
-            return Err(ApplicationError::ValidateConfig(
-                "port ranges must not be empty".to_string(),
-            ));
+            bail!("Failed to validate config: port ranges must not be empty")
         }
-        for (start, end) in config.ranges.iter() {
+        for (start, end) in &config.ranges {
             if start >= end {
-                return Err(ApplicationError::ValidateConfig(format!(
-                    "at port range ({:?}-{:?}), start must be less than range end",
-                    start, end
-                )));
+                bail!("Failed to validate config: at port range ({start}-{end}), start must be less than range end")
             }
         }
 
@@ -103,9 +101,36 @@ impl Display for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dependencies;
+    use std::path::PathBuf;
+    use unimock::{matching, MockFn};
 
     #[test]
-    fn test_empty_config() -> Result<(), ApplicationError> {
+    fn test_load_config() -> Result<()> {
+        let deps = unimock::mock([dependencies::read_file::Fn
+            .each_call(matching!(_))
+            .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
+            .in_any_order()]);
+
+        let config = Config::load(&deps, &PathBuf::new())?.unwrap();
+        assert_eq!(config.ranges, vec![(3000, 3999)]);
+        assert_eq!(config.reserved, vec![]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_missing_config() {
+        let deps = unimock::mock([dependencies::read_file::Fn
+            .each_call(matching!(_))
+            .answers(|_| bail!("Read error"))
+            .in_any_order()]);
+
+        let config = Config::load(&deps, &PathBuf::new());
+        assert!(config.is_err());
+    }
+
+    #[test]
+    fn test_empty_config() -> Result<()> {
         let config = Config::from_toml("")?;
         assert_eq!(config.ranges, vec![(3000, 3999)]);
         assert_eq!(config.reserved, vec![]);
@@ -113,41 +138,25 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config() -> Result<(), ApplicationError> {
-        let config = Config::load(PathBuf::from("./default_config.toml"))?.unwrap();
-        let default_config = Config::default();
-        assert_eq!(config.ranges, default_config.ranges);
-        assert_eq!(config.reserved, default_config.reserved);
-        Ok(())
-    }
-
-    #[test]
-    fn test_missing_config() -> Result<(), ApplicationError> {
-        let config = Config::load(PathBuf::from("./missing_config.toml"))?;
-        assert!(config.is_none());
-        Ok(())
-    }
-
-    #[test]
     fn test_empty_ranges() {
         let result = Config::from_toml("ranges = []");
-        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_inverted_ranges() {
         let result = Config::from_toml("ranges = [[3999, 3000]]");
-        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_empty_range() {
         let result = Config::from_toml("ranges = [[3000, 3000]]");
-        assert!(matches!(result, Err(ApplicationError::ValidateConfig(_))));
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_valid_ports() -> Result<(), ApplicationError> {
+    fn test_valid_ports() -> Result<()> {
         let config = Config::from_toml(
             "ranges = [[3000, 3002], [4000, 4005]]\nreserved = [3001, 4000, 4004]",
         )?;
@@ -159,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_display() -> Result<(), ApplicationError> {
+    fn test_display() -> Result<()> {
         let config = Config::from_toml(
             "ranges = [[3000, 3999], [4500, 4999]]\nreserved = [3000, 3100, 3200]",
         )?;

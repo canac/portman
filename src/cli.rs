@@ -5,6 +5,13 @@ pub enum InitShell {
     Fish,
 }
 
+#[derive(ArgEnum, Clone)]
+pub enum Matcher {
+    Dir,
+    Git,
+    None,
+}
+
 #[derive(Subcommand)]
 pub enum Config {
     /// Display the current configuration
@@ -30,23 +37,33 @@ pub enum Cli {
 
     /// Print the port allocated for a project
     Get {
-        /// The name of the project to get a port for (defaults to the current git project name)
+        /// The name of the project to look for (defaults to searching through projects using their configured matcher)
+        #[clap(required_if_eq("matcher", "none"))]
         project_name: Option<String>,
 
         /// Allocate a new port for the project if one isn't allocated yet
         #[clap(long)]
         allocate: bool,
+
+        /// If allocating a project, the matching strategy to use when activating the project
+        #[clap(long, arg_enum, default_value = "dir", requires = "allocate")]
+        matcher: Matcher,
     },
 
     /// Allocate a port for a new project
     Allocate {
-        /// The name of the project to allocate a port for (defaults to the current git project name)
+        /// The name of the project to allocate a port for (defaults to being provided by the matcher if not none)
+        #[clap(required_if_eq("matcher", "none"))]
         project_name: Option<String>,
+
+        /// The matching strategy to use when activating the project
+        #[clap(long, arg_enum, default_value = "dir")]
+        matcher: Matcher,
     },
 
     /// Release an allocated port
     Release {
-        /// The name of the project to release (defaults to the current git project name)
+        /// The name of the project to release (defaults to searching through projects using their configured matcher)
         project_name: Option<String>,
     },
 

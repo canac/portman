@@ -37,17 +37,65 @@ echo $PORT
 npm run dev
 ```
 
-## Advanced usage
+## Matchers
 
-portman can still be used without the shell integration.
+When the current directory changes, portman searches through the list of allocated projects to see if any of them match the current directory. If any match, it activates the project by setting `$PORT` to that project's port. By default, portman searches by the current working directory when the project was allocated. However, if the project moves directories or if you `cd` into a subdirectory of the project, portman won't be able to tell that you entered that project because the directories won't match. To alleviate this, multiple matching strategies are available.
+
+### `--matcher=dir`
+
+This is the default matching strategy. portman remembers the current working directory when a project is allocated and activates a project whenever the current working directory matches the projects' saved working directory.
+
+### `--matcher=git`
+
+This matching strategy takes advantage of the stability of a project's git origin URL to still be able to find projects when they move around on the filesystem or when entering a project's subdirectory. portman runs `git --get remote.origin.url` to retrieve the origin URL when a project is allocated and activates a project whenever the output of `git --get remote.origin.url` matches the project's saved origin URL. One caveat with this matcher is that if you have multiple clones of the same repository, portman won't be able to distinguish them and will allocate the same port to them, which may or may not be desirable.
+
+```sh
+# Setup the project and allocate a port
+git clone https://github.com/user/project.git
+cd project
+portman allocate --matcher=git
+
+# Rename the project
+cd ..
+mv project project-renamed
+
+# portman can still find the project
+cd .
+```
+
+### `--matcher=none`
+
+This matching strategy turns off matching. The project will never be activated automatically. You can still get the project's port by passing the project's name to `portman get`.
 
 ```sh
 # Run the project's dev server how you normally would, passing it the generated PORT
+# The --allocate flag allocates the project if it doesn't exist yet
 cd my-cool-project
 PORT=$(portman get my-cool-project --allocate) npm run dev
 ```
 
-Now you can see your project running at http://localhost:$PORT and reverse-proxied to https://my-cool-project.localhost
+## Project names
+
+portman can usually infer a name for a project. Therefore, the name argument can often be omitted from `allocate`, `get`, and `release`. The default project name depends on the matching strategy.
+
+When the matching strategy is [`dir`](#--matcherdir) (the default), the project name defaults to the name of the current directory.
+
+```sh
+cd /path/to/my-project
+# Project name defaults to "my-project"
+portman allocate
+```
+
+When the matching strategy is [`git`](#--matchergit), the project name defaults to the name of the GitHub project. Currently, only GitHub repositories are supported when extracting the project name from the remote origin URL.
+
+```sh
+git clone https://github.com/user/my-project.git
+cd my-project
+# Project name defaults to "my-project"
+portman allocate
+```
+
+When the matching strategy is [`none`](#--matchernone), the project name has no default and must be provided manually.
 
 ## CLI API
 
@@ -63,17 +111,17 @@ Prints portman version.
 
 Prints the shell configuration command to enable the shell integration. Currently, only Fish shell is supported, but other shells would be trivial to add.
 
-### `portman allocate [project]`
+### `portman allocate [project] [--matcher=dir|git|none]`
 
-Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, the name of the project is extracted from the current git repo's GitHub URL. For example, if the git URL is `https://github.com/canac/portman.git`, the project name will be `portman`.
+Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names.
 
-### `portman get [project]`
+### `portman get [project] [--allocate] [--matcher=dir|git|none]`
 
-Prints the port allocated for a project. If `project-name` is not provided, the name of the project is extracted from the current git repo's GitHub URL. If the `--allocate` flag is provided, a port is allocated if the project doesn't have a port allocated instead of erroring.
+Prints the port allocated for a project. If `project-name` is provided, it searches for a project by its name. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers). If the `--allocate` flag is provided, a port is allocated if the project doesn't exist instead of erroring. The `--matcher` option can only be provided if `--allocate` was also provided.
 
 ### `portman release [project]`
 
-Releases the port allocated for a project. If `project-name` is not provided, the name of the project is extracted from the current git repo's GitHub URL.
+Releases the port allocated for a project. Just like `portman get`, if `project-name` is provided, it searches for a project by its name and releases the project found. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers) and releases the project found.
 
 ### `portman list`
 
