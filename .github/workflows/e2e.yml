@@ -15,5 +15,4 @@ jobs:
         with:
           command: install
           args: --path .
-      - run: ./e2e/setup.sh
-      - run: ./e2e/test_fish.fish
+      - run: eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" && ./e2e/setup.sh && ./e2e/test_fish.fish
