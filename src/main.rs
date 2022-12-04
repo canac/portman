@@ -62,8 +62,22 @@ fn run(
     });
     let port_allocator = PortAllocator::new(config.get_valid_ports());
 
-    let cli = Cli::try_parse_from(deps.get_args())?;
-    match cli {
+    let cli = Cli::try_parse_from(deps.get_args());
+    // Ignore errors caused by passing --help and --version
+    if let Err(err) = cli.as_ref() {
+        if matches!(
+            err.kind(),
+            clap::ErrorKind::DisplayHelp
+                | clap::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                | clap::ErrorKind::DisplayVersion
+        ) {
+            // The version or help text is contained in the error
+            println!("{err}");
+            return Ok(());
+        }
+    }
+
+    match cli? {
         Cli::Init { shell } => match shell {
             InitShell::Fish => {
                 println!("{}", init_fish());
@@ -285,6 +299,21 @@ mod tests {
                 redirect: false,
             }
         );
+    }
+
+    #[test]
+    fn test_cli_version() {
+        let mocked_deps = unimock::mock([
+            dependencies::get_args::Fn
+                .each_call(matching!())
+                .returns(vec![String::from("portman"), String::from("--version")])
+                .in_any_order(),
+            read_file_mock(),
+            read_var_mock(),
+        ]);
+
+        let result = run(&mocked_deps);
+        assert!(result.is_ok());
     }
 
     #[test]
