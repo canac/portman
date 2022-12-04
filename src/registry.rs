@@ -15,6 +15,10 @@ pub struct Project {
     #[serde(default)]
     pub pinned: bool,
 
+    // Use redirection instead of a reverse-proxy in the Caddyfile
+    #[serde(default)]
+    pub redirect: bool,
+
     pub matcher: Option<Matcher>,
 }
 
@@ -119,6 +123,7 @@ impl PortRegistry {
         deps: &(impl ChoosePort + Environment + Exec + ReadFile + WriteFile),
         name: String,
         port: Option<u16>,
+        redirect: bool,
         matcher: Option<Matcher>,
     ) -> Result<Project> {
         if self.projects.get(&name).is_some() {
@@ -144,9 +149,10 @@ impl PortRegistry {
                 .ok_or_else(|| anyhow!("Failed to choose a port"))?,
         };
         let new_project = Project {
-            matcher,
-            pinned: port.is_some(),
             port: new_port,
+            pinned: port.is_some(),
+            redirect,
+            matcher,
         };
         self.projects.insert(name, new_project.clone());
         self.save(deps)?;
@@ -201,10 +207,12 @@ impl PortRegistry {
             .projects
             .iter()
             .map(|(name, project)| {
-                format!(
-                    "{}.localhost {{\n\treverse_proxy 127.0.0.1:{}\n}}\n",
-                    name, project.port
-                )
+                let action = if project.redirect {
+                    format!("redir http://127.0.0.1:{}", project.port)
+                } else {
+                    format!("reverse_proxy 127.0.0.1:{}", project.port)
+                };
+                format!("{name}.localhost {{\n\t{action}\n}}\n")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -303,6 +311,7 @@ repository = 'https://github.com/user/app2.git'
 
 [projects.app3]
 port = 3003
+redirect = true
 
 [projects.app3.matcher]
 type = 'directory'
@@ -401,7 +410,7 @@ directory = '/projects/app3'
             write_file_mock(),
         ]);
         let mut registry = get_mocked_registry()?;
-        registry.allocate(&mocked_deps, String::from("app4"), None, None)?;
+        registry.allocate(&mocked_deps, String::from("app4"), None, false, None)?;
         assert!(registry.projects.get(&String::from("app4")).is_some());
         Ok(())
     }
@@ -411,7 +420,7 @@ directory = '/projects/app3'
         let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app3"), None, None)
+            .allocate(&mocked_deps, String::from("app3"), None, false, None)
             .is_err());
     }
 
@@ -426,7 +435,7 @@ directory = '/projects/app3'
         let mut registry = get_mocked_registry().unwrap();
         assert_eq!(
             registry
-                .allocate(&mocked_deps, String::from("app4"), Some(3100), None)
+                .allocate(&mocked_deps, String::from("app4"), Some(3100), false, None)
                 .unwrap()
                 .port,
             3100
@@ -444,12 +453,13 @@ directory = '/projects/app3'
         let mut registry = get_mocked_registry().unwrap();
         assert_eq!(
             registry
-                .allocate(&mocked_deps, String::from("app4"), Some(3001), None)
+                .allocate(&mocked_deps, String::from("app4"), Some(3001), false, None)
                 .unwrap(),
             Project {
                 port: 3001,
                 pinned: true,
-                matcher: None
+                redirect: false,
+                matcher: None,
             }
         );
     }
@@ -463,11 +473,29 @@ directory = '/projects/app3'
                 &mocked_deps,
                 String::from("app4"),
                 None,
+                false,
                 Some(Matcher::Directory {
                     directory: PathBuf::from("/projects/app3")
-                })
+                }),
             )
             .is_err());
+    }
+
+    #[test]
+    fn test_allocate_redirect() {
+        let mocked_deps = unimock::mock([
+            exec_mock(),
+            read_file_mock(),
+            read_var_mock(),
+            write_file_mock(),
+        ]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert!(
+            registry
+                .allocate(&mocked_deps, String::from("app4"), Some(3100), true, None)
+                .unwrap()
+                .redirect,
+        );
     }
 
     #[test]
@@ -483,7 +511,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None, None)
+            .allocate(&mocked_deps, String::from("app4"), None, false, None,)
             .is_ok());
     }
 
@@ -506,7 +534,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None, None)
+            .allocate(&mocked_deps, String::from("app4"), None, false, None,)
             .is_ok());
     }
 
@@ -524,7 +552,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None, None)
+            .allocate(&mocked_deps, String::from("app4"), None, false, None)
             .is_ok());
     }
 
@@ -611,7 +639,7 @@ app2.localhost {
 }
 
 app3.localhost {
-\treverse_proxy 127.0.0.1:3003
+\tredir http://127.0.0.1:3003
 }
 # portman end
 ";

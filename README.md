@@ -107,6 +107,14 @@ portman allocate --port=1234
 
 This port can even fall outside of the configured range of allowable ports.
 
+## Redirecting instead of reverse-proxying
+
+Sometimes, using a reverse-proxied domain like https://my-project.localhost doesn't work because of CORS or other architectural factors. In that case, simply provide the `--redirect` flag. Now, navigating to `https://my-project.localhost` will redirect to http://localhost:$PORT instead of reverse-proxying.
+
+```sh
+portman allocate --port=9000 --redirect
+```
+
 ## CLI API
 
 ### `portman -h`, `portman --help`
@@ -121,13 +129,13 @@ Prints portman version.
 
 Prints the shell configuration command to enable the shell integration. Currently, only Fish shell is supported, but other shells would be trivial to add.
 
-### `portman allocate [project] [--port=PORT] [--matcher=dir|git|none]`
+### `portman allocate [project] [--port=PORT] [--matcher=dir|git|none] [--redirect]`
 
-Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. If `port` is provided, that port will be used instead of randomly assigning one. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names.
+Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. If `port` is provided, that port will be used instead of randomly assigning one. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names. If `redirect` is specified, redirect to the server instead of reverse-proxying. See [here](#redirecting-instead-of-reverse-proxying) for more details.
 
-### `portman get [project] [--allocate] [--port=PORT] [--matcher=dir|git|none]`
+### `portman get [project] [--allocate] [--port=PORT] [--matcher=dir|git|none] [--redirect]`
 
-Prints the port allocated for a project. If `project-name` is provided, it searches for a project by its name. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers). If the `--allocate` flag is provided, a port is allocated if the project doesn't exist instead of erroring. The `--port` and `--matcher` options can only be provided if `--allocate` was also provided.
+Prints the port allocated for a project. If `project-name` is provided, it searches for a project by its name. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers). If the `--allocate` flag is provided, a port is allocated if the project doesn't exist instead of erroring. The `--port`, `--matcher`, and `--redirect` options can only be provided if `--allocate` was also provided.
 
 ### `portman release [project]`
 

@@ -25,6 +25,7 @@ fn allocate(
     cli_name: Option<String>,
     cli_port: Option<u16>,
     cli_matcher: &cli::Matcher,
+    cli_redirect: bool,
 ) -> Result<(String, Project)> {
     let matcher = match cli_matcher {
         cli::Matcher::Dir => Some(Matcher::from_cwd(deps)?),
@@ -37,7 +38,7 @@ fn allocate(
     };
     Ok((
         name.clone(),
-        registry.allocate(deps, name, cli_port, matcher)?,
+        registry.allocate(deps, name, cli_port, cli_redirect, matcher)?,
     ))
 }
 
@@ -97,6 +98,7 @@ fn run(
             allocate: cli_allocate,
             port,
             matcher,
+            redirect,
         } => {
             let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
             let project = match project_name {
@@ -106,7 +108,8 @@ fn run(
             let port = if let Some(project) = project {
                 project.port
             } else if cli_allocate {
-                let (_, project) = allocate(deps, &mut registry, project_name, port, &matcher)?;
+                let (_, project) =
+                    allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
                 project.port
             } else {
                 bail!("No projects match the current directory")
@@ -118,9 +121,11 @@ fn run(
             project_name,
             port,
             matcher,
+            redirect,
         } => {
             let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
-            let (name, project) = allocate(deps, &mut registry, project_name, port, &matcher)?;
+            let (name, project) =
+                allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
             println!("Allocated port {} for project {}", project.port, name);
             if let Some(matcher) = project.matcher {
                 let matcher_trigger = match matcher {
@@ -267,6 +272,7 @@ mod tests {
             Some(String::from("project")),
             None,
             &cli::Matcher::None,
+            false,
         )
         .unwrap();
         assert_eq!(name, String::from("project"));
@@ -275,7 +281,8 @@ mod tests {
             Project {
                 port: 3000,
                 pinned: false,
-                matcher: None
+                matcher: None,
+                redirect: false,
             }
         );
     }

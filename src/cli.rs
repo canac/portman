@@ -52,6 +52,10 @@ pub enum Cli {
         /// If allocating a project, the matching strategy to use when activating the project
         #[clap(long, arg_enum, default_value = "dir", requires = "allocate")]
         matcher: Matcher,
+
+        /// If allocating a project, navigate to the project via a redirect instead of reverse-proxy
+        #[clap(long, requires = "allocate")]
+        redirect: bool,
     },
 
     /// Allocate a port for a new project
@@ -67,6 +71,10 @@ pub enum Cli {
         /// The matching strategy to use when activating the project
         #[clap(long, arg_enum, default_value = "dir")]
         matcher: Matcher,
+
+        /// Navigate to the project via a redirect instead of reverse-proxy
+        #[clap(long)]
+        redirect: bool,
     },
 
     /// Release an allocated port
