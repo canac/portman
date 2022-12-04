@@ -45,6 +45,10 @@ pub enum Cli {
         #[clap(long)]
         allocate: bool,
 
+        /// If allocating a project, allocate a specific port to the project instead of randomly assigning one
+        #[clap(long, requires = "allocate")]
+        port: Option<u16>,
+
         /// If allocating a project, the matching strategy to use when activating the project
         #[clap(long, arg_enum, default_value = "dir", requires = "allocate")]
         matcher: Matcher,
@@ -55,6 +59,10 @@ pub enum Cli {
         /// The name of the project to allocate a port for (defaults to being provided by the matcher if not none)
         #[clap(required_if_eq("matcher", "none"))]
         project_name: Option<String>,
+
+        /// Allocate a specific port to the project instead of randomly assigning one
+        #[clap(long)]
+        port: Option<u16>,
 
         /// The matching strategy to use when activating the project
         #[clap(long, arg_enum, default_value = "dir")]

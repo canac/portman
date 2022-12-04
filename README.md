@@ -97,6 +97,16 @@ portman allocate
 
 When the matching strategy is [`none`](#--matchernone), the project name has no default and must be provided manually.
 
+## Manual port assignment
+
+Sometimes, a randomly-assigned port doesn't work because a server hard-codes the port to listen on, for example. In that case, simply provide the `--port` flag.
+
+```sh
+portman allocate --port=1234
+```
+
+This port can even fall outside of the configured range of allowable ports.
+
 ## CLI API
 
 ### `portman -h`, `portman --help`
@@ -111,13 +121,13 @@ Prints portman version.
 
 Prints the shell configuration command to enable the shell integration. Currently, only Fish shell is supported, but other shells would be trivial to add.
 
-### `portman allocate [project] [--matcher=dir|git|none]`
+### `portman allocate [project] [--port=PORT] [--matcher=dir|git|none]`
 
-Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names.
+Allocates a new automatically generated port for a new project. Fails if a project with that name already exists. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. If `port` is provided, that port will be used instead of randomly assigning one. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names.
 
-### `portman get [project] [--allocate] [--matcher=dir|git|none]`
+### `portman get [project] [--allocate] [--port=PORT] [--matcher=dir|git|none]`
 
-Prints the port allocated for a project. If `project-name` is provided, it searches for a project by its name. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers). If the `--allocate` flag is provided, a port is allocated if the project doesn't exist instead of erroring. The `--matcher` option can only be provided if `--allocate` was also provided.
+Prints the port allocated for a project. If `project-name` is provided, it searches for a project by its name. If `project-name` is not provided, it searches for a project that matches the current directory according to the rules explained in [matchers](#matchers). If the `--allocate` flag is provided, a port is allocated if the project doesn't exist instead of erroring. The `--port` and `--matcher` options can only be provided if `--allocate` was also provided.
 
 ### `portman release [project]`
 

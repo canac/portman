@@ -9,6 +9,12 @@ use std::{collections::BTreeMap, path::PathBuf, process::Command};
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Project {
     pub port: u16,
+
+    // If pinned, this port won't ever be changed, if it is not an available
+    // port according to the config
+    #[serde(default)]
+    pub pinned: bool,
+
     pub matcher: Option<Matcher>,
 }
 
@@ -53,20 +59,25 @@ impl PortRegistry {
             .projects
             .into_iter()
             .map(|(name, old_project)| {
-                allocator
-                    .allocate(deps, Some(old_project.port))
-                    .map(|port| {
-                        if port != old_project.port {
-                            changed = true;
-                        }
-                        (
-                            name,
-                            Project {
-                                port,
-                                ..old_project
-                            },
-                        )
-                    })
+                if old_project.pinned {
+                    // Don't reallocate the project's port if the port is pinned
+                    Some((name, old_project))
+                } else {
+                    allocator
+                        .allocate(deps, Some(old_project.port))
+                        .map(|port| {
+                            if port != old_project.port {
+                                changed = true;
+                            }
+                            (
+                                name,
+                                Project {
+                                    port,
+                                    ..old_project
+                                },
+                            )
+                        })
+                }
             })
             .collect::<Option<BTreeMap<_, _>>>()
             .ok_or_else(|| anyhow!("All available ports have been allocated already"))?;
@@ -107,6 +118,7 @@ impl PortRegistry {
         &mut self,
         deps: &(impl ChoosePort + Environment + Exec + ReadFile + WriteFile),
         name: String,
+        port: Option<u16>,
         matcher: Option<Matcher>,
     ) -> Result<Project> {
         if self.projects.get(&name).is_some() {
@@ -124,12 +136,16 @@ impl PortRegistry {
             }
         }
 
-        let new_port = self
-            .allocator
-            .allocate(deps, None)
-            .ok_or_else(|| anyhow!("Failed to choose a port"))?;
+        let new_port = match port {
+            Some(port) => port,
+            None => self
+                .allocator
+                .allocate(deps, None)
+                .ok_or_else(|| anyhow!("Failed to choose a port"))?,
+        };
         let new_project = Project {
             matcher,
+            pinned: port.is_some(),
             port: new_port,
         };
         self.projects.insert(name, new_project.clone());
@@ -279,6 +295,7 @@ port = 3001
 
 [projects.app2]
 port = 3002
+pinned = true
 
 [projects.app2.matcher]
 type = 'git_repository'
@@ -360,11 +377,9 @@ directory = '/projects/app3'
         ]);
         let mock_allocator = PortAllocator::new(config.get_valid_ports());
         let registry = PortRegistry::new(&mocked_deps, PathBuf::from(""), mock_allocator)?;
-        assert!(registry
-            .projects
-            .values()
-            .into_iter()
-            .all(|project| (4000..=4999).contains(&project.port)));
+        assert_eq!(registry.projects.get("app1").unwrap().port, 4000);
+        assert_eq!(registry.projects.get("app2").unwrap().port, 3002);
+        assert_eq!(registry.projects.get("app3").unwrap().port, 4001);
         Ok(())
     }
 
@@ -386,7 +401,7 @@ directory = '/projects/app3'
             write_file_mock(),
         ]);
         let mut registry = get_mocked_registry()?;
-        registry.allocate(&mocked_deps, String::from("app4"), None)?;
+        registry.allocate(&mocked_deps, String::from("app4"), None, None)?;
         assert!(registry.projects.get(&String::from("app4")).is_some());
         Ok(())
     }
@@ -396,8 +411,47 @@ directory = '/projects/app3'
         let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app3"), None)
+            .allocate(&mocked_deps, String::from("app3"), None, None)
             .is_err());
+    }
+
+    #[test]
+    fn test_allocate_with_port() {
+        let mocked_deps = unimock::mock([
+            exec_mock(),
+            read_file_mock(),
+            read_var_mock(),
+            write_file_mock(),
+        ]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert_eq!(
+            registry
+                .allocate(&mocked_deps, String::from("app4"), Some(3100), None)
+                .unwrap()
+                .port,
+            3100
+        );
+    }
+
+    #[test]
+    fn test_allocate_with_duplicate_port() {
+        let mocked_deps = unimock::mock([
+            exec_mock(),
+            read_file_mock(),
+            read_var_mock(),
+            write_file_mock(),
+        ]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert_eq!(
+            registry
+                .allocate(&mocked_deps, String::from("app4"), Some(3001), None)
+                .unwrap(),
+            Project {
+                port: 3001,
+                pinned: true,
+                matcher: None
+            }
+        );
     }
 
     #[test]
@@ -408,6 +462,7 @@ directory = '/projects/app3'
             .allocate(
                 &mocked_deps,
                 String::from("app4"),
+                None,
                 Some(Matcher::Directory {
                     directory: PathBuf::from("/projects/app3")
                 })
@@ -428,7 +483,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None)
+            .allocate(&mocked_deps, String::from("app4"), None, None)
             .is_ok());
     }
 
@@ -451,7 +506,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None)
+            .allocate(&mocked_deps, String::from("app4"), None, None)
             .is_ok());
     }
 
@@ -469,7 +524,7 @@ directory = '/projects/app3'
         ]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .allocate(&mocked_deps, String::from("app4"), None)
+            .allocate(&mocked_deps, String::from("app4"), None, None)
             .is_ok());
     }
 

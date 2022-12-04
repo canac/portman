@@ -23,6 +23,7 @@ fn allocate(
     deps: &(impl ChoosePort + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
     registry: &mut PortRegistry,
     cli_name: Option<String>,
+    cli_port: Option<u16>,
     cli_matcher: &cli::Matcher,
 ) -> Result<(String, Project)> {
     let matcher = match cli_matcher {
@@ -34,7 +35,10 @@ fn allocate(
         Some(cli_name) => cli_name,
         None => matcher.as_ref().unwrap().get_name()?,
     };
-    Ok((name.clone(), registry.allocate(deps, name, matcher)?))
+    Ok((
+        name.clone(),
+        registry.allocate(deps, name, cli_port, matcher)?,
+    ))
 }
 
 fn run(
@@ -91,6 +95,7 @@ fn run(
         Cli::Get {
             project_name,
             allocate: cli_allocate,
+            port,
             matcher,
         } => {
             let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
@@ -101,7 +106,7 @@ fn run(
             let port = if let Some(project) = project {
                 project.port
             } else if cli_allocate {
-                let (_, project) = allocate(deps, &mut registry, project_name, &matcher)?;
+                let (_, project) = allocate(deps, &mut registry, project_name, port, &matcher)?;
                 project.port
             } else {
                 bail!("No projects match the current directory")
@@ -111,10 +116,11 @@ fn run(
 
         Cli::Allocate {
             project_name,
+            port,
             matcher,
         } => {
             let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
-            let (name, project) = allocate(deps, &mut registry, project_name, &matcher)?;
+            let (name, project) = allocate(deps, &mut registry, project_name, port, &matcher)?;
             println!("Allocated port {} for project {}", project.port, name);
             if let Some(matcher) = project.matcher {
                 let matcher_trigger = match matcher {
@@ -259,6 +265,7 @@ mod tests {
             &mocked_deps,
             &mut registry,
             Some(String::from("project")),
+            None,
             &cli::Matcher::None,
         )
         .unwrap();
@@ -267,6 +274,7 @@ mod tests {
             project,
             Project {
                 port: 3000,
+                pinned: false,
                 matcher: None
             }
         );
