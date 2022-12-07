@@ -47,8 +47,7 @@ fn run(
 ) -> Result<()> {
     let project_dirs = directories::ProjectDirs::from("com", "canac", "portman")
         .context("Failed to determine application directories")?;
-    let data_dir = project_dirs.data_local_dir();
-    let registry_path = data_dir.join("registry.toml");
+    let data_dir = project_dirs.data_local_dir().to_owned();
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
     let config_path = match config_env.clone() {
         Some(config_path) => std::path::PathBuf::from(config_path),
@@ -89,7 +88,9 @@ fn run(
                 println!(
                     "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{}",
                     config_path.to_string_lossy(),
-                    registry_path.to_string_lossy(),
+                    data_dir
+                        .join(std::path::PathBuf::from("registry.toml"))
+                        .to_string_lossy(),
                     config
                 );
             }
@@ -114,7 +115,7 @@ fn run(
             matcher,
             redirect,
         } => {
-            let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             let project = match project_name {
                 Some(ref name) => registry.get(name),
                 None => registry.match_cwd(deps).map(|(_, project)| project),
@@ -137,7 +138,7 @@ fn run(
             matcher,
             redirect,
         } => {
-            let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             let (name, project) =
                 allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
             println!("Allocated port {} for project {}", project.port, name);
@@ -151,7 +152,7 @@ fn run(
         }
 
         Cli::Release { project_name } => {
-            let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             let project_name = match project_name {
                 Some(name) => name,
                 None => registry
@@ -170,13 +171,13 @@ fn run(
         }
 
         Cli::Reset => {
-            let mut registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             registry.release_all(deps)?;
             println!("All allocated ports have been released");
         }
 
         Cli::List => {
-            let registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             for (name, project) in registry.iter() {
                 println!(
                     "{} :{}{}",
@@ -192,12 +193,12 @@ fn run(
         }
 
         Cli::Caddyfile => {
-            let registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             print!("{}", registry.caddyfile());
         }
 
         Cli::ReloadCaddy => {
-            let registry = PortRegistry::new(deps, registry_path, port_allocator)?;
+            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
             registry.reload_caddy(deps)?;
             println!("caddy was successfully reloaded");
         }
