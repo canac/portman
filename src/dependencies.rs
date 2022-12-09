@@ -20,6 +20,14 @@ fn choose_port(_deps: &impl std::any::Any, available_ports: &HashSet<u16>) -> Op
     available_ports.iter().choose(&mut rng).copied()
 }
 
+#[entrait(pub DataDir)]
+fn get_data_dir(_deps: &impl std::any::Any) -> Result<PathBuf> {
+    let project_dirs = directories::ProjectDirs::from("com", "canac", "portman")
+        .context("Failed to determine application directories")?;
+    let data_dir = project_dirs.data_local_dir().to_owned();
+    Ok(data_dir)
+}
+
 #[entrait(pub Environment)]
 pub fn read_var(_deps: &impl std::any::Any, var: &str) -> Result<String> {
     let var_name = OsString::from(var);

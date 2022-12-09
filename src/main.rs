@@ -1,4 +1,5 @@
 mod allocator;
+mod caddy;
 mod cli;
 mod config;
 mod dependencies;
@@ -7,20 +8,23 @@ mod matcher;
 mod registry;
 
 use crate::allocator::PortAllocator;
+use crate::caddy::{generate_caddyfile, reload_caddy};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::init::init_fish;
 use crate::matcher::Matcher;
 use crate::registry::PortRegistry;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::StructOpt;
-use dependencies::{Args, ChoosePort, Environment, Exec, ReadFile, WorkingDirectory, WriteFile};
+use dependencies::{
+    Args, ChoosePort, DataDir, Environment, Exec, ReadFile, WorkingDirectory, WriteFile,
+};
 use entrait::Impl;
 use registry::Project;
 use std::process::{self, Command};
 
 fn allocate(
-    deps: &(impl ChoosePort + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
+    deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
     registry: &mut PortRegistry,
     cli_name: Option<String>,
     cli_port: Option<u16>,
@@ -43,11 +47,16 @@ fn allocate(
 }
 
 fn run(
-    deps: &(impl Args + ChoosePort + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
+    deps: &(impl Args
+          + ChoosePort
+          + DataDir
+          + Environment
+          + Exec
+          + ReadFile
+          + WriteFile
+          + WorkingDirectory),
 ) -> Result<()> {
-    let project_dirs = directories::ProjectDirs::from("com", "canac", "portman")
-        .context("Failed to determine application directories")?;
-    let data_dir = project_dirs.data_local_dir().to_owned();
+    let data_dir = deps.get_data_dir()?;
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
     let config_path = match config_env.clone() {
         Some(config_path) => std::path::PathBuf::from(config_path),
@@ -115,7 +124,7 @@ fn run(
             matcher,
             redirect,
         } => {
-            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
             let project = match project_name {
                 Some(ref name) => registry.get(name),
                 None => registry.match_cwd(deps).map(|(_, project)| project),
@@ -138,7 +147,7 @@ fn run(
             matcher,
             redirect,
         } => {
-            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
             let (name, project) =
                 allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
             println!("Allocated port {} for project {}", project.port, name);
@@ -152,7 +161,7 @@ fn run(
         }
 
         Cli::Release { project_name } => {
-            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
             let project_name = match project_name {
                 Some(name) => name,
                 None => registry
@@ -171,13 +180,13 @@ fn run(
         }
 
         Cli::Reset => {
-            let mut registry = PortRegistry::new(deps, data_dir, port_allocator)?;
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
             registry.release_all(deps)?;
             println!("All allocated ports have been released");
         }
 
         Cli::List => {
-            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
+            let registry = PortRegistry::new(deps, port_allocator)?;
             for (name, project) in registry.iter() {
                 println!(
                     "{} :{}{}",
@@ -193,13 +202,13 @@ fn run(
         }
 
         Cli::Caddyfile => {
-            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
-            print!("{}", registry.caddyfile());
+            let registry = PortRegistry::new(deps, port_allocator)?;
+            print!("{}", generate_caddyfile(deps, &registry)?);
         }
 
         Cli::ReloadCaddy => {
-            let registry = PortRegistry::new(deps, data_dir, port_allocator)?;
-            registry.reload_caddy(deps)?;
+            let registry = PortRegistry::new(deps, port_allocator)?;
+            reload_caddy(deps, &registry)?;
             println!("caddy was successfully reloaded");
         }
     }
@@ -235,6 +244,13 @@ mod tests {
             .in_any_order()
     }
 
+    fn data_dir_mock() -> unimock::Clause {
+        dependencies::get_data_dir::Fn
+            .each_call(matching!(_))
+            .answers(|_| Ok(PathBuf::from("/data")))
+            .in_any_order()
+    }
+
     fn exec_mock() -> Clause {
         dependencies::exec::Fn
             .each_call(matching!(_))
@@ -265,13 +281,13 @@ mod tests {
 
     #[test]
     fn test_allocate() {
-        let mocked_deps = unimock::mock([read_file_mock()]);
+        let mocked_deps = unimock::mock([data_dir_mock(), read_file_mock()]);
         let config = Config::default();
         let allocator = PortAllocator::new(config.get_valid_ports());
-        let mut registry =
-            PortRegistry::new(&mocked_deps, PathBuf::from("registry.toml"), allocator).unwrap();
+        let mut registry = PortRegistry::new(&mocked_deps, allocator).unwrap();
 
         let mocked_deps = unimock::mock([
+            data_dir_mock(),
             choose_port_mock(),
             exec_mock(),
             read_file_mock(),
@@ -309,6 +325,7 @@ mod tests {
                 .each_call(matching!())
                 .returns(vec![String::from("portman"), String::from("--version")])
                 .in_any_order(),
+            data_dir_mock(),
             read_file_mock(),
             read_var_mock(),
         ]);
@@ -326,6 +343,7 @@ mod tests {
                 .in_any_order(),
             choose_port_mock(),
             cwd_mock(),
+            data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
@@ -349,6 +367,7 @@ mod tests {
                 .in_any_order(),
             choose_port_mock(),
             cwd_mock(),
+            data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
@@ -371,6 +390,7 @@ mod tests {
                 ])
                 .in_any_order(),
             choose_port_mock(),
+            data_dir_mock(),
             dependencies::exec::Fn
                 .each_call(matching!(_))
                 .answers(|_| {
@@ -400,6 +420,7 @@ mod tests {
                     String::from("--matcher=none"),
                 ])
                 .in_any_order(),
+            data_dir_mock(),
             read_file_mock(),
             read_var_mock(),
         ]);
@@ -421,6 +442,7 @@ mod tests {
                 ])
                 .in_any_order(),
             choose_port_mock(),
+            data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
@@ -442,6 +464,7 @@ mod tests {
                     String::from("edit"),
                 ])
                 .in_any_order(),
+            data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
@@ -462,6 +485,7 @@ mod tests {
                     String::from("edit"),
                 ])
                 .in_any_order(),
+            data_dir_mock(),
             read_file_mock(),
             dependencies::read_var::Fn
                 .each_call(matching!(_))
@@ -484,6 +508,7 @@ mod tests {
                     String::from("edit"),
                 ])
                 .in_any_order(),
+            data_dir_mock(),
             dependencies::exec::Fn
                 .each_call(matching!(_))
                 .answers(|_| bail!("Failed"))
@@ -507,6 +532,7 @@ mod tests {
                     String::from("edit"),
                 ])
                 .in_any_order(),
+            data_dir_mock(),
             dependencies::exec::Fn
                 .each_call(matching!(_))
                 .answers(|_| Ok((ExitStatusExt::from_raw(1), String::new())))
