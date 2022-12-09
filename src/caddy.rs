@@ -154,7 +154,7 @@ fn merge_caddyfile(
 }
 
 // Reload the caddy service with the provided port registry
-pub fn reload_caddy(
+pub fn reload(
     deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
     registry: &PortRegistry,
 ) -> Result<()> {

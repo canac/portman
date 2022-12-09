@@ -93,7 +93,7 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
 
 #[cfg(test)]
 pub mod mocks {
-    use super::*;
+    use super::{exec, get_data_dir, write_file};
     use unimock::{matching, Clause, MockFn};
 
     pub fn data_dir_mock() -> Clause {

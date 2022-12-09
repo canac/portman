@@ -1,4 +1,4 @@
-use crate::caddy::reload_caddy;
+use crate::caddy::reload;
 use crate::dependencies::{ChoosePort, DataDir, Exec, ReadFile, WorkingDirectory, WriteFile};
 use crate::matcher::Matcher;
 use crate::{allocator::PortAllocator, dependencies::Environment};
@@ -108,7 +108,7 @@ impl PortRegistry {
             toml::to_string(&registry).context("Failed to serialize project registry")?;
         deps.write_file(&self.store_path, &registry_str)
             .context("Failed to save registry")?;
-        if let Err(err) = reload_caddy(deps, self) {
+        if let Err(err) = reload(deps, self) {
             // An error reloading Caddy is just a warning, not a fatal error
             println!("Warning: couldn't reload Caddy config.\n\n{err}");
         }
@@ -240,7 +240,7 @@ directory = '/projects/app3'
     fn choose_port_mock() -> unimock::Clause {
         dependencies::choose_port::Fn
             .each_call(matching!(_))
-            .answers(|available_ports| available_ports.iter().min().cloned())
+            .answers(|available_ports| available_ports.iter().min().copied())
             .in_any_order()
     }
 
@@ -523,7 +523,7 @@ directory = '/projects/app3'
         assert_eq!(
             registry.match_cwd(&mocked_deps).unwrap().0,
             &String::from("app3")
-        )
+        );
     }
 
     #[test]
@@ -541,6 +541,6 @@ directory = '/projects/app3'
         assert_eq!(
             registry.match_cwd(&mocked_deps).unwrap().0,
             &String::from("app2")
-        )
+        );
     }
 }

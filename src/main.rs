@@ -1,3 +1,6 @@
+#![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+
 mod allocator;
 mod caddy;
 mod cli;
@@ -8,7 +11,7 @@ mod matcher;
 mod registry;
 
 use crate::allocator::PortAllocator;
-use crate::caddy::{generate_caddyfile, reload_caddy};
+use crate::caddy::{generate_caddyfile, reload};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::init::init_fish;
@@ -46,6 +49,7 @@ fn allocate(
     ))
 }
 
+#[allow(clippy::too_many_lines)]
 fn run(
     deps: &(impl Args
           + ChoosePort
@@ -208,7 +212,7 @@ fn run(
 
         Cli::ReloadCaddy => {
             let registry = PortRegistry::new(deps, port_allocator)?;
-            reload_caddy(deps, &registry)?;
+            reload(deps, &registry)?;
             println!("caddy was successfully reloaded");
         }
     }

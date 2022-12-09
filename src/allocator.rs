@@ -40,7 +40,7 @@ mod tests {
     fn get_deps() -> Unimock {
         unimock::mock([dependencies::choose_port::Fn
             .each_call(matching!(_))
-            .answers(|available_ports| available_ports.iter().min().cloned())
+            .answers(|available_ports| available_ports.iter().min().copied())
             .in_any_order()])
     }
 
