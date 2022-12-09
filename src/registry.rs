@@ -209,7 +209,8 @@ impl PortRegistry {
 pub mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::dependencies;
+    use crate::dependencies::mocks::{exec_mock, write_file_mock};
+    use crate::dependencies::{self, mocks::data_dir_mock};
     use std::os::unix::process::ExitStatusExt;
     use unimock::{matching, MockFn};
 
@@ -243,20 +244,6 @@ directory = '/projects/app3'
             .in_any_order()
     }
 
-    fn data_dir_mock() -> unimock::Clause {
-        dependencies::get_data_dir::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(PathBuf::from("/data")))
-            .in_any_order()
-    }
-
-    fn exec_mock() -> unimock::Clause {
-        dependencies::exec::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok((ExitStatusExt::from_raw(0), String::new())))
-            .in_any_order()
-    }
-
     fn read_file_mock() -> unimock::Clause {
         dependencies::read_file::Fn
             .each_call(matching!(_))
@@ -268,13 +255,6 @@ directory = '/projects/app3'
         dependencies::read_var::Fn
             .each_call(matching!(_))
             .answers(|_| Ok(String::new()))
-            .in_any_order()
-    }
-
-    fn write_file_mock() -> unimock::Clause {
-        dependencies::write_file::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(()))
             .in_any_order()
     }
 

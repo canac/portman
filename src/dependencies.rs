@@ -90,3 +90,35 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
     })?;
     Ok(std::fs::write(path, contents)?)
 }
+
+#[cfg(test)]
+pub mod mocks {
+    use super::*;
+    use unimock::{matching, Clause, MockFn};
+
+    pub fn data_dir_mock() -> Clause {
+        get_data_dir::Fn
+            .each_call(matching!(_))
+            .answers(|_| Ok(std::path::PathBuf::from("/data")))
+            .in_any_order()
+    }
+
+    pub fn exec_mock() -> Clause {
+        exec::Fn
+            .each_call(matching!(_))
+            .answers(|_| {
+                Ok((
+                    std::os::unix::process::ExitStatusExt::from_raw(0),
+                    String::new(),
+                ))
+            })
+            .in_any_order()
+    }
+
+    pub fn write_file_mock() -> Clause {
+        write_file::Fn
+            .each_call(matching!(_))
+            .answers(|_| Ok(()))
+            .in_any_order()
+    }
+}

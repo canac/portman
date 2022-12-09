@@ -227,6 +227,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dependencies::mocks::{data_dir_mock, exec_mock, write_file_mock};
     use std::{os::unix::process::ExitStatusExt, path::PathBuf};
     use unimock::{matching, Clause, MockFn};
 
@@ -244,20 +245,6 @@ mod tests {
             .in_any_order()
     }
 
-    fn data_dir_mock() -> unimock::Clause {
-        dependencies::get_data_dir::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(PathBuf::from("/data")))
-            .in_any_order()
-    }
-
-    fn exec_mock() -> Clause {
-        dependencies::exec::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok((ExitStatusExt::from_raw(0), String::new())))
-            .in_any_order()
-    }
-
     fn read_file_mock() -> Clause {
         dependencies::read_file::Fn
             .each_call(matching!(_))
@@ -269,13 +256,6 @@ mod tests {
         dependencies::read_var::Fn
             .each_call(matching!(_))
             .answers(|_| Ok(String::from("editor")))
-            .in_any_order()
-    }
-
-    fn write_file_mock() -> Clause {
-        dependencies::write_file::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(()))
             .in_any_order()
     }
 
