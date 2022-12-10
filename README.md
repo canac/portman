@@ -37,6 +37,10 @@ echo $PORT
 npm run dev
 ```
 
+## Gallery
+
+portman provides a simple web server for graphically viewing all of your allocated projects and some basic information about them. It is available at https://localhost.
+
 ## Matchers
 
 When the current directory changes, portman searches through the list of allocated projects to see if any of them match the current directory. If any match, it activates the project by setting `$PORT` to that project's port. By default, portman searches by the current working directory when the project was allocated. However, if the project moves directories or if you `cd` into a subdirectory of the project, portman won't be able to tell that you entered that project because the directories won't match. To alleviate this, multiple matching strategies are available.
