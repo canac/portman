@@ -267,7 +267,7 @@ app3.localhost {
                 &registry,
                 Some("# Prefix\n\n# portman begin\n# portman end\n\n# Suffix\n")
             )?,
-            format!("# Prefix\n\n{}\n# Suffix\n", GOLDEN_CADDYFILE)
+            format!("# Prefix\n\n{GOLDEN_CADDYFILE}\n# Suffix\n")
         );
         Ok(())
     }
@@ -278,7 +278,7 @@ app3.localhost {
         let deps = unimock::mock([data_dir_mock()]);
         assert_eq!(
             merge_caddyfile(&deps, &registry, Some("# Suffix\n"))?,
-            format!("{}\n# Suffix\n", GOLDEN_CADDYFILE)
+            format!("{GOLDEN_CADDYFILE}\n# Suffix\n")
         );
         Ok(())
     }

@@ -77,7 +77,7 @@ impl Display for Config {
             "Allowed port ranges: {}",
             self.ranges
                 .iter()
-                .map(|(start, end)| format!("{}-{}", start, end))
+                .map(|(start, end)| format!("{start}-{end}"))
                 .collect::<Vec<_>>()
                 .join(" & ")
         )?;
@@ -88,7 +88,7 @@ impl Display for Config {
                 "\nReserved ports: {}",
                 self.reserved
                     .iter()
-                    .map(|port| format!("{}", port))
+                    .map(|port| format!("{port}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             )?;
@@ -173,7 +173,7 @@ mod tests {
             "ranges = [[3000, 3999], [4500, 4999]]\nreserved = [3000, 3100, 3200]",
         )?;
         assert_eq!(
-            format!("{}", config),
+            format!("{config}"),
             "Allowed port ranges: 3000-3999 & 4500-4999\nReserved ports: 3000, 3100, 3200"
         );
         Ok(())

@@ -142,7 +142,7 @@ fn run(
             } else {
                 bail!("No projects match the current directory")
             };
-            println!("{}", port);
+            println!("{port}");
         }
 
         Cli::Allocate {
@@ -154,7 +154,7 @@ fn run(
             let mut registry = PortRegistry::new(deps, port_allocator)?;
             let (name, project) =
                 allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
-            println!("Allocated port {} for project {}", project.port, name);
+            println!("Allocated port {} for project {name}", project.port);
             if let Some(matcher) = project.matcher {
                 let matcher_trigger = match matcher {
                     Matcher::GitRepository { .. } => "git repository",
@@ -174,10 +174,7 @@ fn run(
                     .ok_or_else(|| anyhow!("No projects match the current directory"))?,
             };
             let project = registry.release(deps, &project_name)?;
-            println!(
-                "Released port {} for project {}",
-                project.port, project_name
-            );
+            println!("Released port {} for project {project_name}", project.port);
             if project.matcher.is_some() {
                 println!("\nRun `cd .` to manually remove the PORT environment variable.");
             }
@@ -223,7 +220,7 @@ fn run(
 fn main() {
     let deps = Impl::new(());
     if let Err(err) = run(&deps) {
-        eprintln!("{}", err);
+        eprintln!("{err}");
         process::exit(1);
     }
 }
