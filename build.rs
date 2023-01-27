@@ -42,14 +42,12 @@ fn generate_manpage() -> io::Result<()> {
         let name = String::from(cmd.get_name());
         let mut buffer: Vec<u8> = Default::default();
         clap_mangen::Man::new(cmd.clone()).render(&mut buffer)?;
-        fs::write(out_dir.join(format!("{}.1", name)), buffer)?;
+        fs::write(out_dir.join(format!("{name}.1")), buffer)?;
 
         for subcommand in cmd.get_subcommands() {
             let subcommand_name = subcommand.get_name();
             gen_manpage_recursive(
-                subcommand
-                    .clone()
-                    .name(format!("{}-{}", name, subcommand_name)),
+                subcommand.clone().name(format!("{name}-{subcommand_name}")),
                 out_dir,
             )?;
         }
