@@ -160,7 +160,7 @@ fn run(
                     Matcher::GitRepository { .. } => "git repository",
                     Matcher::Directory { .. } => "directory",
                 };
-                println!("\nThe PORT environment variable will now be automatically set whenever this {matcher_trigger} is cd-ed into from an initialized shell.\nRun `cd .` to manually set the PORT now.");
+                println!("\nThe PORT environment variable will now be automatically set whenever this {matcher_trigger} is cd-ed into from an initialized shell.");
             }
         }
 
@@ -175,9 +175,6 @@ fn run(
             };
             let project = registry.release(deps, &project_name)?;
             println!("Released port {} for project {project_name}", project.port);
-            if project.matcher.is_some() {
-                println!("\nRun `cd .` to manually remove the PORT environment variable.");
-            }
         }
 
         Cli::Reset => {

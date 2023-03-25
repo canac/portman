@@ -29,8 +29,7 @@ brew services start caddy
 cd my-cool-project
 portman allocate
 
-# Manually change the current directory so that the shell integration will set the $PORT
-cd .
+# Check that the shell integration automatically set the $PORT
 echo $PORT
 
 # Run the project's dev server how you normally would
