@@ -415,6 +415,7 @@ directory = '/projects/app3'
     fn test_allocate_caddy_read_failure() {
         let mocked_deps = unimock::mock([
             choose_port_mock(),
+            data_dir_mock(),
             dependencies::read_file::Fn
                 .each_call(matching!(_))
                 .answers(|_| bail!("Error reading"))
@@ -429,7 +430,29 @@ directory = '/projects/app3'
     }
 
     #[test]
-    fn test_allocate_caddy_write_failure() {
+    fn test_allocate_caddy_write_portman_caddyfile_failure() {
+        let mocked_deps = unimock::mock([
+            choose_port_mock(),
+            data_dir_mock(),
+            dependencies::write_file::Fn
+                .next_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml")))
+                .answers(|_| Ok(()))
+                .once()
+                .in_order(),
+            dependencies::write_file::Fn
+                .next_call(matching!((path, _) if path == &PathBuf::from("/data/Caddyfile")))
+                .answers(|_| bail!("Error writing"))
+                .once()
+                .in_order(),
+        ]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert!(registry
+            .allocate(&mocked_deps, String::from("app4"), None, false, None,)
+            .is_ok());
+    }
+
+    #[test]
+    fn test_allocate_caddy_write_root_caddyfile_failure() {
         let mocked_deps = unimock::mock([
             choose_port_mock(),
             data_dir_mock(),
@@ -437,6 +460,11 @@ directory = '/projects/app3'
             read_var_mock(),
             dependencies::write_file::Fn
                 .next_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml")))
+                .answers(|_| Ok(()))
+                .once()
+                .in_order(),
+            dependencies::write_file::Fn
+                .next_call(matching!((path, _) if path == &PathBuf::from("/data/Caddyfile")))
                 .answers(|_| Ok(()))
                 .once()
                 .in_order(),
