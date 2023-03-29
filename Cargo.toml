@@ -1,6 +1,6 @@
 [package]
 name = "portman"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Caleb Cox"]
 edition = "2021"
 description = "Local port allocation manager"
