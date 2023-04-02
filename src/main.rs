@@ -62,12 +62,13 @@ fn run(
 ) -> Result<()> {
     let data_dir = deps.get_data_dir()?;
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
-    let config_path = match config_env.clone() {
+    let config_env_present = config_env.is_some();
+    let config_path = match config_env {
         Some(config_path) => std::path::PathBuf::from(config_path),
         None => data_dir.join("config.toml"),
     };
     let config = Config::load(deps, &config_path)?.unwrap_or_else(|| {
-        if config_env.is_some() {
+        if config_env_present {
             println!("Warning: config file doesn't exist. Using default config.");
         }
         Config::default()
