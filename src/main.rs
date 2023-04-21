@@ -18,7 +18,7 @@ use crate::init::init_fish;
 use crate::matcher::Matcher;
 use crate::registry::PortRegistry;
 use anyhow::{anyhow, bail, Result};
-use clap::StructOpt;
+use clap::{error::ErrorKind, Parser};
 use dependencies::{
     Args, ChoosePort, DataDir, Environment, Exec, ReadFile, WorkingDirectory, WriteFile,
 };
@@ -80,9 +80,9 @@ fn run(
     if let Err(err) = cli.as_ref() {
         if matches!(
             err.kind(),
-            clap::ErrorKind::DisplayHelp
-                | clap::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
-                | clap::ErrorKind::DisplayVersion
+            ErrorKind::DisplayHelp
+                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                | ErrorKind::DisplayVersion
         ) {
             // The version or help text is contained in the error
             println!("{err}");

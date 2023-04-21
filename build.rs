@@ -2,10 +2,7 @@
 mod cli;
 
 use clap::CommandFactory;
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::PathBuf};
 
 fn main() {
     // Don't rebuild when the generated completions change
@@ -37,25 +34,16 @@ fn generate_completions() -> io::Result<()> {
 }
 
 fn generate_manpage() -> io::Result<()> {
-    // Generate man pages for this command and all of its subcommands
-    fn gen_manpage_recursive(cmd: clap::Command, out_dir: &Path) -> io::Result<()> {
-        let name = String::from(cmd.get_name());
-        let mut buffer: Vec<u8> = Default::default();
-        clap_mangen::Man::new(cmd.clone()).render(&mut buffer)?;
-        fs::write(out_dir.join(format!("{name}.1")), buffer)?;
-
-        for subcommand in cmd.get_subcommands() {
-            let subcommand_name = subcommand.get_name();
-            gen_manpage_recursive(
-                subcommand.clone().name(format!("{name}-{subcommand_name}")),
-                out_dir,
-            )?;
-        }
-
-        Ok(())
-    }
-
     let out_dir = &PathBuf::from("man/man1");
     fs::create_dir_all(out_dir)?;
-    gen_manpage_recursive(cli::Cli::command(), out_dir)
+
+    let mut cmd = cli::Cli::command();
+    cmd.build();
+
+    let name = String::from(cmd.get_name());
+    let mut buffer: Vec<u8> = Default::default();
+    clap_mangen::Man::new(cmd.clone()).render(&mut buffer)?;
+    fs::write(out_dir.join(format!("{name}.1")), buffer)?;
+
+    Ok(())
 }

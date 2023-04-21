@@ -1,11 +1,11 @@
-use clap::{ArgEnum, Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
-#[derive(ArgEnum, Clone)]
+#[derive(ValueEnum, Clone)]
 pub enum InitShell {
     Fish,
 }
 
-#[derive(ArgEnum, Clone)]
+#[derive(ValueEnum, Clone)]
 pub enum Matcher {
     Dir,
     Git,
@@ -27,7 +27,7 @@ pub enum Cli {
     /// Print the shell configuration command to initialize portman
     Init {
         /// Specifies the shell to use
-        #[clap(arg_enum)]
+        #[clap(value_enum)]
         shell: InitShell,
     },
 
@@ -50,7 +50,7 @@ pub enum Cli {
         port: Option<u16>,
 
         /// If allocating a project, the matching strategy to use when activating the project
-        #[clap(long, arg_enum, default_value = "dir", requires = "allocate")]
+        #[clap(long, value_enum, default_value = "dir", requires = "allocate")]
         matcher: Matcher,
 
         /// If allocating a project, navigate to the project via a redirect instead of reverse-proxy
@@ -69,7 +69,7 @@ pub enum Cli {
         port: Option<u16>,
 
         /// The matching strategy to use when activating the project
-        #[clap(long, arg_enum, default_value = "dir")]
+        #[clap(long, value_enum, default_value = "dir")]
         matcher: Matcher,
 
         /// Navigate to the project via a redirect instead of reverse-proxy
