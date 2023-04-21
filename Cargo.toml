@@ -13,13 +13,13 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.66"
 clap = { version = "4.2.4", features = ["derive"] }
-directories = "4.0.1"
+directories = "5.0.0"
 entrait = { version = "0.4.6", features = ["unimock"] }
 lazy_static = "1.4.0"
 rand = "0.8.5"
 regex = "1.5.5"
 serde = { version = "1.0.136", features = ["derive"] }
-toml = "0.5.8"
+toml = "0.7.3"
 unimock = "0.3.14"
 
 [build-dependencies]
