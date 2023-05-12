@@ -7,7 +7,7 @@ use std::{fs, io, path::PathBuf};
 fn main() {
     // Don't rebuild when the generated completions change
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=src/cli.rs");
 
     generate_completions().unwrap();
     generate_manpage().unwrap();
