@@ -73,7 +73,7 @@ This matching strategy turns off matching. The project will never be activated a
 ```sh
 # Run the project's dev server how you normally would, passing it the generated PORT
 cd my-cool-project
-PORT=$(portman allocate my-cool-project) npm run dev
+PORT=$(portman get my-cool-project) npm run dev
 ```
 
 ## Project names
@@ -135,7 +135,7 @@ Prints the shell configuration command to enable the shell integration. Currentl
 
 Allocates a new automatically generated port for a new project. If `project-name` is not provided, a default is calculated by the provided matcher. `project` is required if `--matcher=none`. If `port` is provided, that port will be used instead of randomly assigning one. See [matchers](#matchers) for more details about matchers configuration or [project names](#project-names) for more details about default project names. If `redirect` is specified, redirect to the server instead of reverse-proxying. See [here](#redirecting-instead-of-reverse-proxying) for more details.
 
-`portman allocate` is idempotent, i.e. calling it multiple times with the same arguments will allocate a project the first time and do nothing in the future. However, an error will occur if a port, matcher, or redirect is provided that differs from the existing project's configuration.
+`portman allocate` is idempotent, i.e. calling it multiple times with the same arguments will allocate a project the first time and do nothing for future invocations. However, an error will occur if a port, matcher, or redirect is provided that differs from the existing project's configuration.
 
 ### `portman get [project]`
 
