@@ -140,6 +140,8 @@ fn run(
                 let (_, project) =
                     allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
                 project.port
+            } else if let Some(name) = project_name {
+                bail!("Project {name} does not exist")
             } else {
                 bail!("No projects match the current directory")
             };
