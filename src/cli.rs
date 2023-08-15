@@ -38,24 +38,7 @@ pub enum Cli {
     /// Print the port allocated for a project
     Get {
         /// The name of the project to look for (defaults to searching through projects using their configured matcher)
-        #[clap(required_if_eq("matcher", "none"))]
         project_name: Option<String>,
-
-        /// Allocate a new port for the project if one isn't allocated yet
-        #[clap(long)]
-        allocate: bool,
-
-        /// If allocating a project, allocate a specific port to the project instead of randomly assigning one
-        #[clap(long, requires = "allocate")]
-        port: Option<u16>,
-
-        /// If allocating a project, the matching strategy to use when activating the project
-        #[clap(long, value_enum, default_value = "dir", requires = "allocate")]
-        matcher: Matcher,
-
-        /// If allocating a project, navigate to the project via a redirect instead of reverse-proxy
-        #[clap(long, requires = "allocate")]
-        redirect: bool,
     },
 
     /// Allocate a port for a new project

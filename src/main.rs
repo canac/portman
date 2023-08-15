@@ -24,6 +24,7 @@ use dependencies::{
 };
 use entrait::Impl;
 use registry::Project;
+use std::io::{stdout, IsTerminal};
 use std::process::{self, Command};
 
 fn allocate(
@@ -39,14 +40,33 @@ fn allocate(
         cli::Matcher::Git => Some(Matcher::from_git(deps)?),
         cli::Matcher::None => None,
     };
+    let existing_project = match cli_name {
+        Some(ref name) => registry.get(name),
+        None => registry.match_cwd(deps).map(|(_, project)| project),
+    }
+    .cloned();
     let name = match cli_name {
         Some(cli_name) => cli_name,
         None => matcher.as_ref().unwrap().get_name()?,
     };
-    Ok((
-        name.clone(),
-        registry.allocate(deps, name, cli_port, cli_redirect, matcher)?,
-    ))
+    let project = match existing_project {
+        Some(project) => {
+            if let Some(port) = cli_port {
+                if project.port != port {
+                    bail!("Cannot change port for project {name}")
+                }
+            }
+            if project.matcher != matcher {
+                bail!("Cannot change matcher for project {name}")
+            }
+            if project.redirect != cli_redirect {
+                bail!("Cannot change redirect for project {name}")
+            }
+            project
+        }
+        None => registry.allocate(deps, name.clone(), cli_port, cli_redirect, matcher)?,
+    };
+    Ok((name, project))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -122,30 +142,18 @@ fn run(
             }
         },
 
-        Cli::Get {
-            project_name,
-            allocate: cli_allocate,
-            port,
-            matcher,
-            redirect,
-        } => {
-            let mut registry = PortRegistry::new(deps, port_allocator)?;
+        Cli::Get { project_name } => {
+            let registry = PortRegistry::new(deps, port_allocator)?;
             let project = match project_name {
-                Some(ref name) => registry.get(name),
-                None => registry.match_cwd(deps).map(|(_, project)| project),
-            };
-            let port = if let Some(project) = project {
-                project.port
-            } else if cli_allocate {
-                let (_, project) =
-                    allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
-                project.port
-            } else if let Some(name) = project_name {
-                bail!("Project {name} does not exist")
-            } else {
-                bail!("No projects match the current directory")
-            };
-            println!("{port}");
+                Some(ref name) => registry
+                    .get(name)
+                    .ok_or_else(|| anyhow!("Project {name} does not exist")),
+                None => registry
+                    .match_cwd(deps)
+                    .map(|(_, project)| project)
+                    .ok_or_else(|| anyhow!("No projects match the current directory")),
+            }?;
+            println!("{}", project.port);
         }
 
         Cli::Allocate {
@@ -157,13 +165,18 @@ fn run(
             let mut registry = PortRegistry::new(deps, port_allocator)?;
             let (name, project) =
                 allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
-            println!("Allocated port {} for project {name}", project.port);
-            if let Some(matcher) = project.matcher {
-                let matcher_trigger = match matcher {
-                    Matcher::GitRepository { .. } => "git repository",
-                    Matcher::Directory { .. } => "directory",
-                };
-                println!("\nThe PORT environment variable will now be automatically set whenever this {matcher_trigger} is cd-ed into from an initialized shell.");
+            if stdout().is_terminal() {
+                println!("Port {} is allocated for project {name}", project.port);
+                if let Some(matcher) = project.matcher {
+                    let matcher_trigger = match matcher {
+                        Matcher::GitRepository { .. } => "git repository",
+                        Matcher::Directory { .. } => "directory",
+                    };
+                    println!("\nThe PORT environment variable will now be automatically set whenever this {matcher_trigger} is cd-ed into from an initialized shell.");
+                }
+            } else {
+                // Only print the port if stdout isn't a TTY for easier scripting
+                println!("{}", project.port);
             }
         }
 
