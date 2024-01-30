@@ -7,7 +7,6 @@ mod cli;
 mod config;
 mod dependencies;
 mod init;
-mod matcher;
 mod registry;
 
 use crate::allocator::PortAllocator;
@@ -15,63 +14,107 @@ use crate::caddy::{generate_caddyfile, reload};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::init::init_fish;
-use crate::matcher::Matcher;
 use crate::registry::PortRegistry;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{error::ErrorKind, Parser};
 use dependencies::{
-    Args, ChoosePort, DataDir, Environment, Exec, ReadFile, WorkingDirectory, WriteFile,
+    Args, CheckPath, ChoosePort, DataDir, Environment, Exec, ReadFile, WorkingDirectory, WriteFile,
 };
 use entrait::Impl;
 use registry::Project;
+use std::fmt::Write;
 use std::io::{stdout, IsTerminal};
+use std::path::PathBuf;
 use std::process::{self, Command};
 
-fn allocate(
+// Find and return a reference to the active project based on the current directory
+fn active_project<'registry>(
+    deps: &impl WorkingDirectory,
+    registry: &'registry PortRegistry,
+) -> Result<(&'registry String, &'registry Project)> {
+    registry
+        .match_cwd(deps)?
+        .ok_or_else(|| anyhow!("No projects match the current directory"))
+}
+
+fn format_project(name: &str, project: &Project) -> String {
+    let directory = project
+        .directory
+        .as_ref()
+        .map(|directory| format!(" ({})", directory.display()))
+        .unwrap_or_default();
+    let linked_port = project
+        .linked_port
+        .map(|port| format!(" -> :{port}"))
+        .unwrap_or_default();
+    format!("{name} :{}{linked_port}{directory}", project.port)
+}
+
+fn create(
     deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
     registry: &mut PortRegistry,
-    cli_name: Option<String>,
-    cli_port: Option<u16>,
-    cli_matcher: &cli::Matcher,
-    cli_redirect: bool,
+    name: Option<String>,
+    no_activate: bool,
+    linked_port: Option<u16>,
 ) -> Result<(String, Project)> {
-    let matcher = match cli_matcher {
-        cli::Matcher::Dir => Some(Matcher::from_cwd(deps)?),
-        cli::Matcher::Git => Some(Matcher::from_git(deps)?),
-        cli::Matcher::None => None,
+    let name = if let Some(name) = name {
+        name
+    } else {
+        let directory = deps.get_cwd()?;
+        let basename = directory
+            .file_name()
+            .context("Failed to extract directory basename")?;
+        let name = basename
+            .to_str()
+            .context("Failed to convert directory to string")?;
+        PortRegistry::normalize_name(name)
     };
-    let existing_project = match cli_name {
-        Some(ref name) => registry.get(name),
-        None => registry.match_cwd(deps).map(|(_, project)| project),
-    }
-    .cloned();
-    let name = match cli_name {
-        Some(cli_name) => cli_name,
-        None => matcher.as_ref().unwrap().get_name()?,
+    let directory = if no_activate {
+        None
+    } else {
+        Some(deps.get_cwd()?)
     };
+    let existing_project = registry.get(&name).cloned();
     let project = match existing_project {
         Some(project) => {
-            if let Some(port) = cli_port {
-                if project.port != port {
-                    bail!("Cannot change port for project {name}")
-                }
-            }
-            if project.matcher != matcher {
-                bail!("Cannot change matcher for project {name}")
-            }
-            if project.redirect != cli_redirect {
-                bail!("Cannot change redirect for project {name}")
+            if project.directory.is_none() && directory.is_some() {
+                bail!("Project was originally created with --no-activate");
+            } else if project.directory.is_some() && directory.is_none() {
+                bail!("Project was originally created without --no-activate");
+            } else if project.directory != directory {
+                bail!("Cannot change directory for project {name}");
             }
             project
         }
-        None => registry.allocate(deps, name.clone(), cli_port, cli_redirect, matcher)?,
+        None => registry.create(deps, name.clone(), directory, linked_port)?,
     };
     Ok((name, project))
+}
+
+fn cleanup(
+    deps: &(impl CheckPath + DataDir + Environment + Exec + ReadFile + WriteFile),
+    registry: &mut PortRegistry,
+) -> Result<Vec<(String, Project)>> {
+    // Find all existing projects with a directory that doesn't exist
+    let removed_projects = registry
+        .iter_projects()
+        .filter_map(|(name, project)| {
+            project.directory.as_ref().and_then(|directory| {
+                if deps.path_exists(directory) {
+                    None
+                } else {
+                    Some(name.clone())
+                }
+            })
+        })
+        .collect();
+    registry.delete_many(deps, removed_projects)
 }
 
 #[allow(clippy::too_many_lines)]
 fn run(
     deps: &(impl Args
+          + CheckPath
           + ChoosePort
           + DataDir
           + Environment
@@ -84,12 +127,12 @@ fn run(
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
     let config_env_present = config_env.is_some();
     let config_path = match config_env {
-        Some(config_path) => std::path::PathBuf::from(config_path),
+        Some(config_path) => PathBuf::from(config_path),
         None => data_dir.join("config.toml"),
     };
     let config = Config::load(deps, &config_path)?.unwrap_or_else(|| {
         if config_env_present {
-            println!("Warning: config file doesn't exist. Using default config.");
+            eprintln!("Warning: config file doesn't exist. Using default config.");
         }
         Config::default()
     });
@@ -120,21 +163,14 @@ fn run(
         Cli::Config(subcommand) => match subcommand {
             ConfigSubcommand::Show => {
                 println!(
-                    "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{}",
-                    config_path.to_string_lossy(),
-                    data_dir
-                        .join(std::path::PathBuf::from("registry.toml"))
-                        .to_string_lossy(),
-                    config
+                    "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{config}",
+                    config_path.display(),
+                    data_dir.join(PathBuf::from("registry.toml")).display()
                 );
             }
             ConfigSubcommand::Edit => {
                 let editor = deps.read_var("EDITOR")?;
-                println!(
-                    "Opening \"{}\" with \"{}\"",
-                    config_path.to_string_lossy(),
-                    editor,
-                );
+                println!("Opening \"{}\" with \"{editor}\"", config_path.display());
                 let (status, _) = deps.exec(Command::new(editor).arg(config_path))?;
                 if !status.success() {
                     bail!("Editor command failed to execute successfully");
@@ -142,37 +178,49 @@ fn run(
             }
         },
 
-        Cli::Get { project_name } => {
+        Cli::Get {
+            project_name,
+            extended,
+        } => {
             let registry = PortRegistry::new(deps, port_allocator)?;
-            let project = match project_name {
+            let (name, project) = match project_name {
                 Some(ref name) => registry
                     .get(name)
+                    .map(|project| (name, project))
                     .ok_or_else(|| anyhow!("Project {name} does not exist")),
-                None => registry
-                    .match_cwd(deps)
-                    .map(|(_, project)| project)
-                    .ok_or_else(|| anyhow!("No projects match the current directory")),
+                None => active_project(deps, &registry),
             }?;
-            println!("{}", project.port);
+            if extended {
+                let directory = project
+                    .directory
+                    .as_ref()
+                    .map(|directory| directory.display().to_string())
+                    .unwrap_or_default();
+                let linked_port = project
+                    .linked_port
+                    .map(|port| port.to_string())
+                    .unwrap_or_default();
+                if stdout().is_terminal() {
+                    print!("port: {}\nname: {name}\ndirectory: {directory}\nlinked port: {linked_port}\n", project.port);
+                } else {
+                    print!("{}\n{name}\n{directory}\n{linked_port}\n", project.port);
+                }
+            } else {
+                println!("{}", project.port);
+            }
         }
 
-        Cli::Allocate {
+        Cli::Create {
             project_name,
-            port,
-            matcher,
-            redirect,
+            link,
+            no_activate,
         } => {
             let mut registry = PortRegistry::new(deps, port_allocator)?;
-            let (name, project) =
-                allocate(deps, &mut registry, project_name, port, &matcher, redirect)?;
+            let (name, project) = create(deps, &mut registry, project_name, no_activate, link)?;
             if stdout().is_terminal() {
-                println!("Port {} is allocated for project {name}", project.port);
-                if let Some(matcher) = project.matcher {
-                    let matcher_trigger = match matcher {
-                        Matcher::GitRepository { .. } => "git repository",
-                        Matcher::Directory { .. } => "directory",
-                    };
-                    println!("\nThe PORT environment variable will now be automatically set whenever this {matcher_trigger} is cd-ed into from an initialized shell.");
+                println!("Created project {}", format_project(&name, &project));
+                if !no_activate {
+                    println!("\nThe PORT environment variable will now be automatically set whenever this directory is cd-ed into from an initialized shell.");
                 }
             } else {
                 // Only print the port if stdout isn't a TTY for easier scripting
@@ -180,39 +228,75 @@ fn run(
             }
         }
 
-        Cli::Release { project_name } => {
+        Cli::Delete { project_name } => {
             let mut registry = PortRegistry::new(deps, port_allocator)?;
             let project_name = match project_name {
                 Some(name) => name,
-                None => registry
-                    .match_cwd(deps)
-                    .map(|(name, _)| name.clone())
-                    .ok_or_else(|| anyhow!("No projects match the current directory"))?,
+                None => active_project(deps, &registry)?.0.clone(),
             };
-            let project = registry.release(deps, &project_name)?;
-            println!("Released port {} for project {project_name}", project.port);
+            let project = registry.delete(deps, &project_name)?;
+            println!(
+                "Deleted project {}",
+                format_project(&project_name, &project),
+            );
+        }
+
+        Cli::Cleanup => {
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
+            let deleted_projects = cleanup(deps, &mut registry)?;
+            print!(
+                "Deleted {}\n{}",
+                match deleted_projects.len() {
+                    1 => String::from("1 project"),
+                    count => format!("{count} projects"),
+                },
+                deleted_projects
+                    .iter()
+                    .fold(String::new(), |mut output, (name, project)| {
+                        let _ = writeln!(output, "{}", format_project(name, project));
+                        output
+                    })
+            );
         }
 
         Cli::Reset => {
             let mut registry = PortRegistry::new(deps, port_allocator)?;
-            registry.release_all(deps)?;
-            println!("All allocated ports have been released");
+            registry.delete_all(deps)?;
+            println!("Deleted all projects");
         }
 
         Cli::List => {
             let registry = PortRegistry::new(deps, port_allocator)?;
-            for (name, project) in registry.iter() {
-                println!(
-                    "{} :{}{}",
-                    name,
-                    project.port,
-                    project
-                        .matcher
-                        .as_ref()
-                        .map(|matcher| format!(" (matches {matcher})"))
-                        .unwrap_or_default()
-                );
-            }
+            let output =
+                registry
+                    .iter_projects()
+                    .fold(String::new(), |mut output, (name, project)| {
+                        let _ = writeln!(output, "{}", format_project(name, project));
+                        output
+                    });
+            print!("{output}");
+        }
+
+        Cli::Link { port, project_name } => {
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
+            let project_name = match project_name {
+                Some(name) => name,
+                None => active_project(deps, &registry)?.0.clone(),
+            };
+            registry.link(deps, port, &project_name)?;
+            println!("Linked project {project_name} to port {port}");
+        }
+
+        Cli::Unlink { project_name } => {
+            let mut registry = PortRegistry::new(deps, port_allocator)?;
+            let project_name = match project_name {
+                Some(name) => name,
+                None => active_project(deps, &registry)?.0.clone(),
+            };
+            match registry.unlink(deps, &project_name)? {
+                Some(port) => println!("Unlinked project {project_name} from port {port}"),
+                None => println!("Project {project_name} was not linked to a port"),
+            };
         }
 
         Cli::Caddyfile => {
@@ -223,7 +307,7 @@ fn run(
         Cli::ReloadCaddy => {
             let registry = PortRegistry::new(deps, port_allocator)?;
             reload(deps, &registry)?;
-            println!("caddy was successfully reloaded");
+            println!("Successfully reloaded caddy");
         }
     }
 
@@ -241,21 +325,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dependencies::mocks::{data_dir_mock, exec_mock, write_file_mock};
-    use std::{os::unix::process::ExitStatusExt, path::PathBuf};
+    use crate::dependencies::mocks::{cwd_mock, data_dir_mock, exec_mock, write_file_mock};
+    use std::os::unix::process::ExitStatusExt;
     use unimock::{matching, Clause, MockFn};
 
     fn choose_port_mock() -> Clause {
         dependencies::choose_port::Fn
             .each_call(matching!(_))
             .answers(|_| Some(3000))
-            .in_any_order()
-    }
-
-    fn cwd_mock() -> Clause {
-        dependencies::get_cwd::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(PathBuf::from("/portman")))
             .in_any_order()
     }
 
@@ -274,30 +351,57 @@ mod tests {
     }
 
     #[test]
-    fn test_allocate() {
+    fn test_format_project_simple() {
+        assert_eq!(
+            format_project(
+                "app1",
+                &Project {
+                    port: 3001,
+                    directory: None,
+                    linked_port: None,
+                }
+            ),
+            String::from("app1 :3001"),
+        );
+    }
+
+    #[test]
+    fn test_format_project_complex() {
+        assert_eq!(
+            format_project(
+                "app1",
+                &Project {
+                    port: 3001,
+                    directory: Some(PathBuf::from("/projects/app1")),
+                    linked_port: Some(3000),
+                }
+            ),
+            String::from("app1 :3001 -> :3000 (/projects/app1)"),
+        );
+    }
+
+    #[test]
+    fn test_create() {
         let mocked_deps = unimock::mock([data_dir_mock(), read_file_mock()]);
         let config = Config::default();
         let allocator = PortAllocator::new(config.get_valid_ports());
         let mut registry = PortRegistry::new(&mocked_deps, allocator).unwrap();
 
         let mocked_deps = unimock::mock([
-            data_dir_mock(),
             choose_port_mock(),
+            cwd_mock(),
+            data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
-            dependencies::write_file::Fn
-                .each_call(matching!(_))
-                .answers(|_| Ok(()))
-                .in_any_order(),
+            write_file_mock(),
         ]);
-        let (name, project) = allocate(
+        let (name, project) = create(
             &mocked_deps,
             &mut registry,
             Some(String::from("project")),
-            None,
-            &cli::Matcher::None,
             false,
+            None,
         )
         .unwrap();
         assert_eq!(name, String::from("project"));
@@ -305,11 +409,54 @@ mod tests {
             project,
             Project {
                 port: 3000,
-                pinned: false,
-                matcher: None,
-                redirect: false,
+                directory: Some(PathBuf::from("/portman")),
+                linked_port: None,
             }
         );
+    }
+
+    #[test]
+    fn test_cleanup() {
+        let mocked_deps = unimock::mock([
+            data_dir_mock(),
+            dependencies::read_file::Fn
+                .each_call(matching!(_))
+                .answers(|_| {
+                    Ok(Some(String::from(
+                        "[projects]
+app1 = { port = 3001 }
+app2 = { port = 3002 }
+app3 = { port = 3003, directory = '/projects/app3' }
+app4 = { port = 3004, directory = '/projects/app4' }",
+                    )))
+                })
+                .in_any_order(),
+        ]);
+        let config = Config::default();
+        let allocator = PortAllocator::new(config.get_valid_ports());
+        let mut registry = PortRegistry::new(&mocked_deps, allocator).unwrap();
+
+        let mocked_deps = unimock::mock([
+            dependencies::path_exists::Fn
+                .next_call(matching!((path) if path == &PathBuf::from("/projects/app3")))
+                .answers(|_| false)
+                .once()
+                .in_order(),
+            dependencies::path_exists::Fn
+                .next_call(matching!((path) if path == &PathBuf::from("/projects/app4")))
+                .answers(|_| true)
+                .once()
+                .in_order(),
+            data_dir_mock(),
+            exec_mock(),
+            read_file_mock(),
+            read_var_mock(),
+            write_file_mock(),
+        ]);
+
+        let cleaned_projects = cleanup(&mocked_deps, &mut registry).unwrap();
+        assert_eq!(cleaned_projects.len(), 1);
+        assert_eq!(cleaned_projects.get(0).unwrap().0, String::from("app3"));
     }
 
     #[test]
@@ -329,11 +476,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_allocate() {
+    fn test_cli_create() {
         let mocked_deps = unimock::mock([
             dependencies::get_args::Fn
                 .each_call(matching!())
-                .returns(vec![String::from("portman"), String::from("allocate")])
+                .returns(vec![String::from("portman"), String::from("create")])
                 .in_any_order(),
             choose_port_mock(),
             cwd_mock(),
@@ -349,18 +496,18 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_allocate_dir_matcher() {
+    fn test_cli_create_no_activate() {
         let mocked_deps = unimock::mock([
             dependencies::get_args::Fn
                 .each_call(matching!())
                 .returns(vec![
                     String::from("portman"),
-                    String::from("allocate"),
-                    String::from("--matcher=dir"),
+                    String::from("create"),
+                    String::from("project"),
+                    String::from("--no-activate"),
                 ])
                 .in_any_order(),
             choose_port_mock(),
-            cwd_mock(),
             data_dir_mock(),
             exec_mock(),
             read_file_mock(),
@@ -373,45 +520,14 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_allocate_git_matcher() {
+    fn test_cli_create_no_activate_no_name() {
         let mocked_deps = unimock::mock([
             dependencies::get_args::Fn
                 .each_call(matching!())
                 .returns(vec![
                     String::from("portman"),
-                    String::from("allocate"),
-                    String::from("--matcher=git"),
-                ])
-                .in_any_order(),
-            choose_port_mock(),
-            data_dir_mock(),
-            dependencies::exec::Fn
-                .each_call(matching!(_))
-                .answers(|_| {
-                    Ok((
-                        ExitStatusExt::from_raw(0),
-                        String::from("https://github.com/user/project.git"),
-                    ))
-                })
-                .in_any_order(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
-
-        let result = run(&mocked_deps);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_cli_allocate_none_matcher() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("allocate"),
-                    String::from("--matcher=none"),
+                    String::from("create"),
+                    String::from("--no-activate"),
                 ])
                 .in_any_order(),
             data_dir_mock(),
@@ -421,30 +537,6 @@ mod tests {
 
         let result = run(&mocked_deps);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_cli_allocate_none_matcher_name() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("allocate"),
-                    String::from("project"),
-                    String::from("--matcher=none"),
-                ])
-                .in_any_order(),
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
-
-        let result = run(&mocked_deps);
-        assert!(result.is_ok());
     }
 
     #[test]

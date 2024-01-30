@@ -1,4 +1,5 @@
 use crate::dependencies::ChoosePort;
+use anyhow::{bail, Result};
 use std::collections::HashSet;
 
 pub struct PortAllocator {
@@ -13,8 +14,13 @@ impl PortAllocator {
         }
     }
 
+    // Remove a port from the pool of available ports
+    pub fn discard(&mut self, port: u16) {
+        self.available_ports.remove(&port);
+    }
+
     // Allocate a new port, using the desired port if it is provided and is valid
-    pub fn allocate(&mut self, deps: &impl ChoosePort, desired_port: Option<u16>) -> Option<u16> {
+    pub fn allocate(&mut self, deps: &impl ChoosePort, desired_port: Option<u16>) -> Result<u16> {
         let allocated_port = desired_port
             .and_then(|port| {
                 if self.available_ports.contains(&port) {
@@ -24,10 +30,11 @@ impl PortAllocator {
                 }
             })
             .or_else(|| deps.choose_port(&self.available_ports));
-        if let Some(port) = allocated_port {
-            self.available_ports.remove(&port);
-        }
-        allocated_port
+        let Some(port) = allocated_port else {
+            bail!("All available ports have been allocated already")
+        };
+        self.available_ports.remove(&port);
+        Ok(port)
     }
 }
 
@@ -53,21 +60,30 @@ mod tests {
     }
 
     #[test]
+    fn test_discard() {
+        let mut allocator = PortAllocator::new(3000..=3001);
+        let deps = get_deps();
+        allocator.discard(3000);
+        assert_eq!(allocator.allocate(&deps, None).unwrap(), 3001);
+        assert!(allocator.allocate(&deps, None).is_err());
+    }
+
+    #[test]
     fn test_allocate() {
         let mut allocator = PortAllocator::new(3000..=3001);
         let deps = get_deps();
-        assert!(allocator.allocate(&deps, None).is_some());
-        assert!(allocator.allocate(&deps, None).is_some());
-        assert_eq!(allocator.allocate(&deps, None), None);
+        assert!(allocator.allocate(&deps, None).is_ok());
+        assert!(allocator.allocate(&deps, None).is_ok());
+        assert!(allocator.allocate(&deps, None).is_err());
     }
 
     #[test]
     fn test_desired_port() {
         let mut allocator = PortAllocator::new(3000..=3002);
         let deps = get_deps();
-        assert_eq!(allocator.allocate(&deps, Some(3001)), Some(3001));
-        assert_eq!(allocator.allocate(&deps, Some(4000)), Some(3000));
-        assert_eq!(allocator.allocate(&deps, None), Some(3002));
-        assert_eq!(allocator.allocate(&deps, None), None);
+        assert_eq!(allocator.allocate(&deps, Some(3001)).unwrap(), 3001);
+        assert_eq!(allocator.allocate(&deps, Some(4000)).unwrap(), 3000);
+        assert_eq!(allocator.allocate(&deps, None).unwrap(), 3002);
+        assert!(allocator.allocate(&deps, None).is_err());
     }
 }
