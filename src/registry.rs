@@ -3,6 +3,7 @@ use crate::dependencies::{ChoosePort, DataDir, Exec, ReadFile, WorkingDirectory,
 use crate::{allocator::PortAllocator, dependencies::Environment};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
@@ -23,12 +24,13 @@ pub struct Registry {
     store_path: PathBuf,
     projects: BTreeMap<String, Project>,
     allocator: PortAllocator,
+    dirty: bool,
 }
 
 impl Registry {
     // Create a new registry
     pub fn new(
-        deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile),
+        deps: &(impl ChoosePort + DataDir + Environment + ReadFile),
         port_allocator: PortAllocator,
     ) -> Result<Self> {
         let store_path = deps.get_data_dir()?.join(PathBuf::from("registry.toml"));
@@ -55,7 +57,7 @@ impl Registry {
             };
         }
 
-        let mut changed = false;
+        let mut dirty = false;
         let mut directories: HashSet<PathBuf> = HashSet::new();
 
         // Validate all ports in the registry against the config and regenerate
@@ -71,21 +73,21 @@ impl Registry {
                 if let Some(linked_port) = old_project.linked_port {
                     if !linked_ports.insert(linked_port) {
                         old_project.linked_port = None;
-                        changed = true;
+                        dirty = true;
                     }
                 }
 
                 if let Some(directory) = old_project.directory.as_ref() {
                     if !directories.insert(directory.clone()) {
                         old_project.directory = None;
-                        changed = true;
+                        dirty = true;
                     }
                 }
 
                 let existing_port = old_project.port;
                 allocator.allocate(deps, Some(existing_port)).map(|port| {
                     if port != existing_port {
-                        changed = true;
+                        dirty = true;
                     }
                     (
                         name,
@@ -101,10 +103,8 @@ impl Registry {
             store_path,
             projects,
             allocator,
+            dirty,
         };
-        if changed {
-            registry.save(deps)?;
-        }
         Ok(registry)
     }
 
@@ -113,6 +113,10 @@ impl Registry {
         &self,
         deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
     ) -> Result<()> {
+        if !self.dirty {
+            return Ok(());
+        }
+
         let registry = RegistryData {
             projects: self.projects.clone(),
         };
@@ -135,14 +139,14 @@ impl Registry {
     // Create a new project and return it
     pub fn create(
         &mut self,
-        deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile),
-        name: String,
+        deps: &impl ChoosePort,
+        name: &str,
         directory: Option<PathBuf>,
         linked_port: Option<u16>,
     ) -> Result<Project> {
-        Self::validate_name(&name)?;
+        Self::validate_name(name)?;
 
-        if self.projects.contains_key(&name) {
+        if self.projects.contains_key(name) {
             bail!("A project already has the name {name}");
         }
 
@@ -165,20 +169,21 @@ impl Registry {
             directory,
             linked_port: None,
         };
-        self.projects.insert(name.clone(), new_project.clone());
+        self.projects.insert(name.to_string(), new_project.clone());
 
         if let Some(port) = linked_port {
-            self.link(deps, &name, port)?;
+            self.link(deps, name, port)?;
         }
 
-        self.save(deps)?;
+        self.dirty = true;
+
         Ok(new_project)
     }
 
     // Update a project and return the updated project
     pub fn update(
         &mut self,
-        deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile),
+        _deps: &impl Any,
         name: &str,
         directory: Option<PathBuf>,
     ) -> Result<Project> {
@@ -186,29 +191,26 @@ impl Registry {
             bail!("Project {name} does not exist");
         };
 
-        project.directory = directory;
-        let project = project.clone();
-        self.save(deps)?;
-        Ok(project)
+        if project.directory != directory {
+            project.directory = directory;
+            self.dirty = true;
+        }
+        Ok(project.clone())
     }
 
     // Delete a project and return the deleted project and its names
-    pub fn delete(
-        &mut self,
-        deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
-        name: &str,
-    ) -> Result<Project> {
+    pub fn delete(&mut self, _deps: &impl Any, name: &str) -> Result<Project> {
         let Some(project) = self.projects.remove(name) else {
             bail!("Project {name} does not exist");
         };
-        self.save(deps)?;
+        self.dirty = true;
         Ok(project)
     }
 
     // Delete multiple projects and return the deleted projects and their names
     pub fn delete_many(
         &mut self,
-        deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
+        _deps: &impl Any,
         project_names: Vec<String>,
     ) -> Result<Vec<(String, Project)>> {
         let deleted_projects: Vec<(String, Project)> = project_names
@@ -222,18 +224,15 @@ impl Registry {
             })
             .collect::<Result<Vec<_>>>()?;
         if !deleted_projects.is_empty() {
-            self.save(deps)?;
+            self.dirty = true;
         }
         Ok(deleted_projects)
     }
 
     // Delete all projects
-    pub fn delete_all(
-        &mut self,
-        deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
-    ) -> Result<()> {
+    pub fn delete_all(&mut self, _deps: &impl Any) {
         self.projects = BTreeMap::new();
-        self.save(deps)
+        self.dirty = true;
     }
 
     // Iterate over all projects with their names
@@ -244,7 +243,7 @@ impl Registry {
     // Link a port to a project
     pub fn link(
         &mut self,
-        deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile),
+        deps: &impl ChoosePort,
         project_name: &str,
         linked_port: u16,
     ) -> Result<()> {
@@ -256,32 +255,33 @@ impl Registry {
             if project.port == linked_port {
                 // Take the port from the project so that it can be used by the linked port
                 project.port = self.allocator.allocate(deps, None)?;
+                self.dirty = true;
             }
             if name == project_name {
-                // Link the port to the new project
-                project.linked_port = Some(linked_port);
+                if project.linked_port != Some(linked_port) {
+                    // Link the port to the new project
+                    project.linked_port = Some(linked_port);
+                    self.dirty = true;
+                }
             } else if project.linked_port == Some(linked_port) {
                 // Unlink the port from the previous project
                 project.linked_port = None;
+                self.dirty = true;
             }
         }
 
-        self.save(deps)
+        Ok(())
     }
 
     // Unlink the port linked to a project and return the previous linked port
-    pub fn unlink(
-        &mut self,
-        deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile),
-        project_name: &str,
-    ) -> Result<Option<u16>> {
+    pub fn unlink(&mut self, _deps: &impl Any, project_name: &str) -> Result<Option<u16>> {
         let Some(project) = self.projects.get_mut(project_name) else {
             bail!("Project {project_name} does not exist");
         };
 
         let previous_linked_port = project.linked_port.take();
         if previous_linked_port.is_some() {
-            self.save(deps)?;
+            self.dirty = true;
         }
         Ok(previous_linked_port)
     }
@@ -352,7 +352,7 @@ impl Registry {
 pub mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::dependencies::mocks::{data_dir_mock, exec_mock, write_file_mock};
+    use crate::dependencies::mocks::{data_dir_mock, write_file_mock};
     use crate::dependencies::{self};
     use std::os::unix::process::ExitStatusExt;
     use unimock::{matching, MockFn};
@@ -433,7 +433,6 @@ directory = '/projects/app3'
         let config = Config::default();
         let mocked_deps = unimock::mock([
             data_dir_mock(),
-            exec_mock(),
             dependencies::read_file::Fn
                 .each_call(matching!(_))
                 .answers(|_| {
@@ -450,13 +449,12 @@ directory = '/projects/app'",
                     )))
                 })
                 .in_any_order(),
-            read_var_mock(),
-            write_file_mock(),
         ]);
         let allocator = PortAllocator::new(config.get_valid_ports());
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert!(registry.get("app1").unwrap().directory.is_some());
         assert!(registry.get("app2").unwrap().directory.is_none());
+        assert!(registry.dirty);
     }
 
     #[test]
@@ -464,7 +462,6 @@ directory = '/projects/app'",
         let config = Config::default();
         let mocked_deps = unimock::mock([
             data_dir_mock(),
-            exec_mock(),
             dependencies::read_file::Fn
                 .each_call(matching!(_))
                 .answers(|_| {
@@ -481,13 +478,12 @@ linked_port = 3000",
                     )))
                 })
                 .in_any_order(),
-            read_var_mock(),
-            write_file_mock(),
         ]);
         let allocator = PortAllocator::new(config.get_valid_ports());
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert!(registry.get("app1").unwrap().linked_port.is_some());
         assert!(registry.get("app2").unwrap().linked_port.is_none());
+        assert!(registry.dirty);
     }
 
     #[test]
@@ -496,7 +492,6 @@ linked_port = 3000",
         let mocked_deps = unimock::mock([
             choose_port_mock(),
             data_dir_mock(),
-            exec_mock(),
             dependencies::read_file::Fn
                 .each_call(matching!(_))
                 .answers(|_| {
@@ -505,12 +500,11 @@ linked_port = 3000",
                     )))
                 })
                 .in_any_order(),
-            read_var_mock(),
-            write_file_mock(),
         ]);
         let allocator = PortAllocator::new(config.get_valid_ports());
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert_eq!(registry.projects.get("app1").unwrap().port, 3000);
+        assert!(registry.dirty);
     }
 
     #[test]
@@ -519,115 +513,28 @@ linked_port = 3000",
             ranges: vec![(4000, 4999)],
             ..Default::default()
         };
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([choose_port_mock(), data_dir_mock(), read_file_mock()]);
         let allocator = PortAllocator::new(config.get_valid_ports());
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert_eq!(registry.get("app1").unwrap().port, 4000);
         assert_eq!(registry.get("app2").unwrap().port, 4001);
         assert_eq!(registry.get("app3").unwrap().port, 4002);
+        assert!(registry.dirty);
     }
 
     #[test]
-    fn test_get() {
-        let registry = get_mocked_registry().unwrap();
-        assert_eq!(registry.get("app1").unwrap().port, 3001);
-        assert!(registry.get("app4").is_none());
+    fn test_save_clean() {
+        let config = Config::default();
+        let mocked_deps = unimock::mock([data_dir_mock(), read_file_mock()]);
+        let allocator = PortAllocator::new(config.get_valid_ports());
+        let registry = Registry::new(&mocked_deps, allocator).unwrap();
+        assert!(!registry.dirty);
+        registry.save(&mocked_deps).unwrap();
     }
 
     #[test]
-    fn test_create() {
+    fn test_save_caddy_read_failure() {
         let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
-        let mut registry = get_mocked_registry().unwrap();
-        registry
-            .create(&mocked_deps, String::from("app4"), None, None)
-            .unwrap();
-        assert!(registry.get("app4").is_some());
-    }
-
-    #[test]
-    fn test_create_invalid_name() {
-        let mocked_deps = unimock::mock([]);
-        let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(&mocked_deps, String::from("App3"), None, None)
-            .is_err());
-    }
-
-    #[test]
-    fn test_create_duplicate_name() {
-        let mocked_deps = unimock::mock([]);
-        let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(&mocked_deps, String::from("app3"), None, None)
-            .is_err());
-    }
-
-    #[test]
-    fn test_create_linked_port() {
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
-        let mut registry = get_mocked_registry().unwrap();
-        registry
-            .create(&mocked_deps, String::from("app4"), None, Some(3100))
-            .unwrap();
-        assert_eq!(registry.get("app4").unwrap().linked_port.unwrap(), 3100);
-    }
-
-    #[test]
-    fn test_create_linked_port_reallocates_previous() {
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
-        let mut registry = get_mocked_registry().unwrap();
-        registry
-            .create(&mocked_deps, String::from("app4"), None, Some(3001))
-            .unwrap();
-        assert_eq!(registry.get("app1").unwrap().port, 3005);
-    }
-
-    #[test]
-    fn test_create_duplicate_directory() {
-        let mocked_deps = unimock::mock([]);
-        let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(
-                &mocked_deps,
-                String::from("app4"),
-                Some(PathBuf::from("/projects/app3")),
-                None,
-            )
-            .is_err());
-    }
-
-    #[test]
-    fn test_create_caddy_read_failure() {
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
             data_dir_mock(),
             dependencies::read_file::Fn
                 .each_call(matching!(_))
@@ -637,15 +544,13 @@ linked_port = 3000",
             write_file_mock(),
         ]);
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(&mocked_deps, String::from("app4"), None, None)
-            .is_ok());
+        registry.dirty = true;
+        assert!(registry.save(&mocked_deps).is_ok());
     }
 
     #[test]
-    fn test_create_caddy_write_portman_caddyfile_failure() {
+    fn test_save_caddy_write_portman_caddyfile_failure() {
         let mocked_deps = unimock::mock([
-            choose_port_mock(),
             data_dir_mock(),
             dependencies::write_file::Fn
                 .next_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml")))
@@ -659,15 +564,13 @@ linked_port = 3000",
                 .in_order(),
         ]);
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(&mocked_deps, String::from("app4"), None, None)
-            .is_ok());
+        registry.dirty = true;
+        assert!(registry.save(&mocked_deps).is_ok());
     }
 
     #[test]
-    fn test_create_caddy_write_root_caddyfile_failure() {
+    fn test_save_caddy_write_root_caddyfile_failure() {
         let mocked_deps = unimock::mock([
-            choose_port_mock(),
             data_dir_mock(),
             read_file_mock(),
             read_var_mock(),
@@ -688,15 +591,13 @@ linked_port = 3000",
                 .in_order(),
         ]);
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(&mocked_deps, String::from("app4"), None, None)
-            .is_ok());
+        registry.dirty = true;
+        assert!(registry.save(&mocked_deps).is_ok());
     }
 
     #[test]
-    fn test_create_caddy_exec_failure() {
+    fn test_save_caddy_exec_failure() {
         let mocked_deps = unimock::mock([
-            choose_port_mock(),
             data_dir_mock(),
             dependencies::exec::Fn
                 .each_call(matching!(_))
@@ -707,20 +608,82 @@ linked_port = 3000",
             write_file_mock(),
         ]);
         let mut registry = get_mocked_registry().unwrap();
+        registry.dirty = true;
+        assert!(registry.save(&mocked_deps).is_ok());
+    }
+
+    #[test]
+    fn test_get() {
+        let registry = get_mocked_registry().unwrap();
+        assert_eq!(registry.get("app1").unwrap().port, 3001);
+        assert!(registry.get("app4").is_none());
+    }
+
+    #[test]
+    fn test_create() {
+        let mocked_deps = unimock::mock([choose_port_mock()]);
+        let mut registry = get_mocked_registry().unwrap();
+        registry.create(&mocked_deps, "app4", None, None).unwrap();
+        assert!(registry.get("app4").is_some());
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_create_invalid_name() {
+        let mocked_deps = unimock::mock([]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert!(registry.create(&mocked_deps, "App3", None, None).is_err());
+        assert!(!registry.dirty);
+    }
+
+    #[test]
+    fn test_create_duplicate_name() {
+        let mocked_deps = unimock::mock([]);
+        let mut registry = get_mocked_registry().unwrap();
+        assert!(registry.create(&mocked_deps, "app3", None, None).is_err());
+        assert!(!registry.dirty);
+    }
+
+    #[test]
+    fn test_create_linked_port() {
+        let mocked_deps = unimock::mock([choose_port_mock()]);
+        let mut registry = get_mocked_registry().unwrap();
+        registry
+            .create(&mocked_deps, "app4", None, Some(3100))
+            .unwrap();
+        assert_eq!(registry.get("app4").unwrap().linked_port.unwrap(), 3100);
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_create_linked_port_reallocates_previous() {
+        let mocked_deps = unimock::mock([choose_port_mock()]);
+        let mut registry = get_mocked_registry().unwrap();
+        registry
+            .create(&mocked_deps, "app4", None, Some(3001))
+            .unwrap();
+        assert_eq!(registry.get("app1").unwrap().port, 3005);
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_create_duplicate_directory() {
+        let mocked_deps = unimock::mock([]);
+        let mut registry = get_mocked_registry().unwrap();
         assert!(registry
-            .create(&mocked_deps, String::from("app4"), None, None)
-            .is_ok());
+            .create(
+                &mocked_deps,
+                &"app4",
+                Some(PathBuf::from("/projects/app3")),
+                None,
+            )
+            .is_err());
+        assert!(!registry.dirty);
     }
 
     #[test]
     fn test_update() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         let path = PathBuf::from("/projects/app2");
         assert_eq!(
@@ -735,6 +698,27 @@ linked_port = 3000",
             registry.get("app2").unwrap().directory.as_ref().unwrap(),
             &path,
         );
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_update_same() {
+        let mocked_deps = unimock::mock([]);
+        let mut registry = get_mocked_registry().unwrap();
+        let path = PathBuf::from("/projects/app3");
+        assert_eq!(
+            registry
+                .update(&mocked_deps, "app3", Some(path.clone()))
+                .unwrap()
+                .directory
+                .unwrap(),
+            path,
+        );
+        assert_eq!(
+            registry.get("app3").unwrap().directory.as_ref().unwrap(),
+            &path,
+        );
+        assert!(!registry.dirty);
     }
 
     #[test]
@@ -746,13 +730,7 @@ linked_port = 3000",
 
     #[test]
     fn test_delete() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         registry.delete(&mocked_deps, "app2").unwrap();
         assert!(registry.get("app2").is_none());
@@ -767,13 +745,7 @@ linked_port = 3000",
 
     #[test]
     fn test_delete_many() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         let deleted_projects = registry
             .delete_many(
@@ -799,63 +771,52 @@ linked_port = 3000",
             .delete_many(&mocked_deps, vec![])
             .unwrap()
             .is_empty());
+        assert!(!registry.dirty);
     }
 
     #[test]
     fn test_delete_all() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
-        registry.delete_all(&mocked_deps).unwrap();
+        registry.delete_all(&mocked_deps);
         assert!(registry.projects.is_empty());
+        assert!(registry.dirty);
     }
 
     #[test]
     fn test_link_create() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3005).unwrap();
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3005);
+        assert!(registry.dirty);
     }
 
     #[test]
     fn test_link_change() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3100).unwrap();
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3100);
+        assert!(registry.dirty);
     }
 
     #[test]
     fn test_link_move() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app3", 3000).unwrap();
         assert!(registry.get("app2").unwrap().linked_port.is_none());
         assert_eq!(registry.get("app3").unwrap().linked_port.unwrap(), 3000);
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_link_noop() {
+        let mocked_deps = unimock::mock([]);
+        let mut registry = get_mocked_registry().unwrap();
+        registry.link(&mocked_deps, "app2", 3000).unwrap();
+        assert!(!registry.dirty);
     }
 
     #[test]
@@ -863,54 +824,38 @@ linked_port = 3000",
         let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.link(&mocked_deps, "app4", 3004).is_err());
+        assert!(!registry.dirty);
     }
 
     #[test]
     fn test_link_reallocates_previous() {
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([choose_port_mock()]);
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3001).unwrap();
         assert_ne!(registry.get("app1").unwrap().port, 3001);
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3001);
+        assert!(registry.dirty);
     }
 
     #[test]
     fn test_link_reallocates_self() {
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([choose_port_mock()]);
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app1", 3001).unwrap();
         assert_ne!(registry.get("app1").unwrap().port, 3001);
         assert_eq!(registry.get("app1").unwrap().linked_port.unwrap(), 3001);
+        assert!(registry.dirty);
     }
 
     #[test]
     fn test_unlink() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert_eq!(
             registry.unlink(&mocked_deps, "app2").unwrap().unwrap(),
             3000,
         );
+        assert!(registry.dirty);
     }
 
     #[test]
@@ -918,6 +863,7 @@ linked_port = 3000",
         let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.unlink(&mocked_deps, "app1").unwrap().is_none());
+        assert!(!registry.dirty);
     }
 
     #[test]
@@ -925,6 +871,7 @@ linked_port = 3000",
         let mocked_deps = unimock::mock([]);
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.unlink(&mocked_deps, "app4").is_err());
+        assert!(!registry.dirty);
     }
 
     #[test]

@@ -51,7 +51,7 @@ fn format_project(name: &str, project: &Project) -> String {
 }
 
 fn create(
-    deps: &(impl ChoosePort + DataDir + Environment + Exec + ReadFile + WriteFile + WorkingDirectory),
+    deps: &(impl ChoosePort + WorkingDirectory + 'static),
     registry: &mut Registry,
     name: Option<String>,
     no_activate: bool,
@@ -84,12 +84,12 @@ fn create(
         return Ok((name, project));
     }
 
-    let project = registry.create(deps, name.clone(), directory, linked_port)?;
+    let project = registry.create(deps, &name, directory, linked_port)?;
     Ok((name, project))
 }
 
 fn cleanup(
-    deps: &(impl CheckPath + DataDir + Environment + Exec + ReadFile + WriteFile),
+    deps: &(impl CheckPath + DataDir + Environment + Exec + ReadFile + WriteFile + 'static),
     registry: &mut Registry,
 ) -> Result<Vec<(String, Project)>> {
     // Find all existing projects with a directory that doesn't exist
@@ -118,7 +118,8 @@ fn run(
           + Exec
           + ReadFile
           + WriteFile
-          + WorkingDirectory),
+          + WorkingDirectory
+          + 'static),
 ) -> Result<()> {
     let data_dir = deps.get_data_dir()?;
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
@@ -222,6 +223,7 @@ fn run(
                 link,
                 overwrite,
             )?;
+            registry.save(deps)?;
             if stdout().is_terminal() {
                 println!("Created project {}", format_project(&name, &project));
                 if !no_activate {
@@ -240,6 +242,7 @@ fn run(
                 None => active_project(deps, &registry)?.0.clone(),
             };
             let project = registry.delete(deps, &project_name)?;
+            registry.save(deps)?;
             println!(
                 "Deleted project {}",
                 format_project(&project_name, &project),
@@ -249,6 +252,7 @@ fn run(
         Cli::Cleanup => {
             let mut registry = Registry::new(deps, port_allocator)?;
             let deleted_projects = cleanup(deps, &mut registry)?;
+            registry.save(deps)?;
             print!(
                 "Deleted {}\n{}",
                 match deleted_projects.len() {
@@ -266,7 +270,8 @@ fn run(
 
         Cli::Reset => {
             let mut registry = Registry::new(deps, port_allocator)?;
-            registry.delete_all(deps)?;
+            registry.delete_all(deps);
+            registry.save(deps)?;
             println!("Deleted all projects");
         }
 
@@ -279,6 +284,7 @@ fn run(
                         let _ = writeln!(output, "{}", format_project(name, project));
                         output
                     });
+            registry.save(deps)?;
             print!("{output}");
         }
 
@@ -289,6 +295,7 @@ fn run(
                 None => active_project(deps, &registry)?.0.clone(),
             };
             registry.link(deps, &project_name, port)?;
+            registry.save(deps)?;
             println!("Linked project {project_name} to port {port}");
         }
 
@@ -298,7 +305,9 @@ fn run(
                 Some(name) => name,
                 None => active_project(deps, &registry)?.0.clone(),
             };
-            match registry.unlink(deps, &project_name)? {
+            let unlinked_port = registry.unlink(deps, &project_name)?;
+            registry.save(deps)?;
+            match unlinked_port {
                 Some(port) => println!("Unlinked project {project_name} from port {port}"),
                 None => println!("Project {project_name} was not linked to a port"),
             };
@@ -392,15 +401,7 @@ mod tests {
         let allocator = PortAllocator::new(config.get_valid_ports());
         let mut registry = Registry::new(&mocked_deps, allocator).unwrap();
 
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            cwd_mock(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
-        ]);
+        let mocked_deps = unimock::mock([choose_port_mock(), cwd_mock()]);
         let (name, project) = create(
             &mocked_deps,
             &mut registry,
@@ -434,11 +435,6 @@ mod tests {
                 .each_call(matching!(_))
                 .answers(|()| Ok(PathBuf::from("/portman/project")))
                 .in_any_order(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
         ]);
         create(
             &mocked_deps,
@@ -501,11 +497,6 @@ app4 = { port = 3004, directory = '/projects/app4' }",
                 .answers(|_| true)
                 .once()
                 .in_order(),
-            data_dir_mock(),
-            exec_mock(),
-            read_file_mock(),
-            read_var_mock(),
-            write_file_mock(),
         ]);
 
         let cleaned_projects = cleanup(&mocked_deps, &mut registry).unwrap();
