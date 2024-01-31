@@ -1,13 +1,14 @@
-# `ranges` tells portman which ranges of ports to allocate ports in. It is an
-# array of two-item arrays. The first item is the start of the port range and
-# the second item is the end of the port range.
+# `ranges` tells portman which ranges of ports can be assigned to projects. It
+# is an array of two-item arrays. The first item is the start of the port range
+# and the second item is the end of the port range.
 #
-# Example (allocates ports from 3000-3099 and 3200-3299):
+# Example (assigns ports from 3000-3099 and 3200-3299):
 # ranges = [[3000, 3099], [3200, 3299]]
 ranges = [[3000, 3999]]
 
-# `ranges` overrides `ranges` and tells portman which ports to never allocate.
+# `reserved` overrides `ranges` and tells portman which ports to never assign.
 # It is an array of integers.
 #
-# Example (allocates ports in `ranges` except for 3210 and 3121):
+# Example (assigns ports in `ranges` except for 3210 and 3121):
+# reserved = [3210, 3121]
 reserved = []

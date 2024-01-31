@@ -14,6 +14,11 @@ fn get_args(_deps: &impl std::any::Any) -> Vec<String> {
     std::env::args().collect()
 }
 
+#[entrait(pub CheckPath)]
+fn path_exists(_deps: &impl std::any::Any, path: &Path) -> bool {
+    path.exists()
+}
+
 #[entrait(pub ChoosePort)]
 fn choose_port(_deps: &impl std::any::Any, available_ports: &HashSet<u16>) -> Option<u16> {
     let mut rng = rand::thread_rng();
@@ -79,13 +84,13 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
     let parent_dir = path.parent().with_context(|| {
         format!(
             "Failed to determine parent directory for file at \"{}\"",
-            path.to_string_lossy()
+            path.display()
         )
     })?;
     std::fs::create_dir_all(parent_dir).with_context(|| {
         format!(
             "Failed to create parent directory for file at \"{}\"",
-            parent_dir.to_string_lossy()
+            parent_dir.display()
         )
     })?;
     Ok(std::fs::write(path, contents)?)
@@ -93,13 +98,21 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
 
 #[cfg(test)]
 pub mod mocks {
-    use super::{exec, get_data_dir, write_file};
+    use super::{exec, get_cwd, get_data_dir, write_file};
+    use std::path::PathBuf;
     use unimock::{matching, Clause, MockFn};
+
+    pub fn cwd_mock() -> Clause {
+        get_cwd::Fn
+            .each_call(matching!(_))
+            .answers(|()| Ok(PathBuf::from("/portman")))
+            .in_any_order()
+    }
 
     pub fn data_dir_mock() -> Clause {
         get_data_dir::Fn
             .each_call(matching!(_))
-            .answers(|_| Ok(std::path::PathBuf::from("/data")))
+            .answers(|()| Ok(std::path::PathBuf::from("/data")))
             .in_any_order()
     }
 

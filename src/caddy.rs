@@ -1,7 +1,7 @@
 use crate::dependencies::{DataDir, Environment, Exec, ReadFile, WriteFile};
-use crate::matcher::Matcher;
-use crate::registry::PortRegistry;
+use crate::registry::Registry;
 use anyhow::{bail, Context, Result};
+use std::fmt::Write;
 use std::path::PathBuf;
 
 // Return the path the portman Caddyfile import
@@ -15,29 +15,32 @@ fn gallery_www_path(deps: &impl DataDir) -> Result<PathBuf> {
 }
 
 // Return the generated gallery
-fn generate_gallery_index(registry: &PortRegistry) -> String {
+fn generate_gallery_index(registry: &Registry) -> String {
+    let project_count = registry.iter_projects().count();
     let projects = registry
-        .iter()
-        .map(|(name, project)| {
-            let location = project.matcher.as_ref().map(|matcher| {
-                format!(
-                    "\n          <p class=\"monospace\">{}</p>",
-                    match matcher {
-                        Matcher::Directory { directory } => directory.to_string_lossy().to_string(),
-                        Matcher::GitRepository { repository } => repository.clone(),
-                    }
-                )
-            });
-            format!(
-                r#"        <a class="project" href="https://{name}.localhost">
+        .iter_projects()
+        .fold(String::new(), |mut output, (name, project)| {
+            let port = project.port;
+            let directory = project
+                .directory
+                .as_ref()
+                .map(|directory| {
+                    format!(
+                        "\n          <p class=\"monospace\">\"{}\"</p>",
+                        directory.display()
+                    )
+                })
+                .unwrap_or_default();
+            let _ = write!(
+                output,
+                r#"
+        <a class="project" href="https://{name}.localhost">
           <h2>{name}</h2>
-          <p>Port: <strong>{}</strong></p>{}
+          <p>Port: <strong>{port}</strong></p>{directory}
         </a>"#,
-                project.port,
-                location.unwrap_or_default()
-            )
-        })
-        .collect::<Vec<_>>();
+            );
+            output
+        });
     format!(
         r#"
 <!DOCTYPE html>
@@ -95,36 +98,38 @@ fn generate_gallery_index(registry: &PortRegistry) -> String {
   </head>
   <body>
     <div class="container">
-      <h1>portman projects ({})</h1>
-      <div class="gallery">
-{}
+      <h1>portman projects ({project_count})</h1>
+      <div class="gallery">{projects}
       </div>
     </div>
   </body>
 </html>
 "#,
-        projects.len(),
-        projects.join("\n")
     )
 }
 
 // Return the Caddyfile as a string
-pub fn generate_caddyfile(deps: &impl DataDir, registry: &PortRegistry) -> Result<String> {
-    let caddyfile = registry
-        .iter()
-        .map(|(name, project)| {
-            let action = if project.redirect {
-                format!("redir http://localhost:{}", project.port)
-            } else {
-                format!("reverse_proxy localhost:{}", project.port)
-            };
-            format!("{name}.localhost {{\n\t{action}\n}}\n")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+pub fn generate_caddyfile(deps: &impl DataDir, registry: &Registry) -> Result<String> {
+    let projects = registry
+        .iter_projects()
+        .fold(String::new(), |mut output, (name, project)| {
+            let _ = write!(
+                output,
+                "\n{name}.localhost {{\n\treverse_proxy localhost:{}\n}}\n",
+                project.port
+            );
+            if let Some(linked_port) = project.linked_port {
+                let _ = write!(
+                    output,
+                    "\nhttp://localhost:{linked_port} {{\n\treverse_proxy localhost:{}\n}}\n",
+                    project.port
+                );
+            }
+            output
+        });
     Ok(format!(
-        "localhost {{\n\tfile_server {{\n\t\troot \"{}\"\n\t}}\n}}\n\n{caddyfile}",
-        gallery_www_path(deps)?.to_string_lossy()
+        "localhost {{\n\tfile_server {{\n\t\troot \"{}\"\n\t}}\n}}\n{projects}",
+        gallery_www_path(deps)?.display()
     ))
 }
 
@@ -134,7 +139,7 @@ fn update_import(
     deps: &impl DataDir,
     existing_caddyfile: Option<String>,
 ) -> Result<Option<String>> {
-    let import_statement = format!("import \"{}\"\n", import_path(deps)?.to_string_lossy());
+    let import_statement = format!("import \"{}\"\n", import_path(deps)?.display());
     let existing_caddyfile = existing_caddyfile.unwrap_or_default();
     Ok(if existing_caddyfile.contains(import_statement.as_str()) {
         None
@@ -146,17 +151,12 @@ fn update_import(
 // Reload the caddy service with the provided port registry
 pub fn reload(
     deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
-    registry: &PortRegistry,
+    registry: &Registry,
 ) -> Result<()> {
     // Determine the caddyfile path
     let import_path = import_path(deps)?;
     deps.write_file(&import_path, &generate_caddyfile(deps, registry)?)
-        .with_context(|| {
-            format!(
-                "Failed to write Caddyfile at \"{}\"",
-                import_path.to_string_lossy()
-            )
-        })?;
+        .with_context(|| format!("Failed to write Caddyfile at \"{}\"", import_path.display()))?;
 
     // Read the existing caddyfile so that we can update it as necessary
     let caddyfile_path = PathBuf::from(deps.read_var("HOMEBREW_PREFIX")?)
@@ -165,7 +165,7 @@ pub fn reload(
     let existing_caddyfile = deps.read_file(&caddyfile_path).with_context(|| {
         format!(
             "Failed to read Caddyfile at \"{}\"",
-            caddyfile_path.to_string_lossy()
+            caddyfile_path.display()
         )
     })?;
     if let Some(caddyfile_contents) = update_import(deps, existing_caddyfile)? {
@@ -173,7 +173,7 @@ pub fn reload(
             .with_context(|| {
                 format!(
                     "Failed to write Caddyfile at \"{}\"",
-                    caddyfile_path.to_string_lossy()
+                    caddyfile_path.display()
                 )
             })?;
     }
@@ -187,7 +187,7 @@ pub fn reload(
     .with_context(|| {
         format!(
             "Failed to write gallery index file at \"{}\"",
-            gallery_index_path.to_string_lossy()
+            gallery_index_path.display()
         )
     })?;
 
@@ -230,60 +230,62 @@ app2.localhost {
 \treverse_proxy localhost:3002
 }
 
+http://localhost:3000 {
+\treverse_proxy localhost:3002
+}
+
 app3.localhost {
-\tredir http://localhost:3003
+\treverse_proxy localhost:3003
 }
 ";
 
     #[test]
-    fn test_caddyfile() -> Result<()> {
-        let registry = get_mocked_registry()?;
-        let deps = unimock::mock([data_dir_mock()]);
-        assert_eq!(generate_caddyfile(&deps, &registry)?, GOLDEN_CADDYFILE);
-        Ok(())
-    }
-
-    #[test]
-    fn test_update_import_no_existing() -> Result<()> {
+    fn test_caddyfile() {
+        let registry = get_mocked_registry().unwrap();
         let deps = unimock::mock([data_dir_mock()]);
         assert_eq!(
-            update_import(&deps, None)?,
-            Some(String::from("import \"/data/Caddyfile\"\n"))
+            generate_caddyfile(&deps, &registry).unwrap(),
+            GOLDEN_CADDYFILE
         );
-        Ok(())
     }
 
     #[test]
-    fn test_update_import_already_present() -> Result<()> {
+    fn test_update_import_no_existing() {
+        let deps = unimock::mock([data_dir_mock()]);
+        assert_eq!(
+            update_import(&deps, None).unwrap(),
+            Some(String::from("import \"/data/Caddyfile\"\n"))
+        );
+    }
+
+    #[test]
+    fn test_update_import_already_present() {
         let deps = unimock::mock([data_dir_mock()]);
         assert!(update_import(
             &deps,
             Some(String::from(
                 "import \"/data/Caddyfile\"\n# Other content\n"
             ))
-        )?
+        )
+        .unwrap()
         .is_none());
-        Ok(())
     }
 
     #[test]
-    fn test_update_import_prepend() -> Result<()> {
+    fn test_update_import_prepend() {
         let deps = unimock::mock([data_dir_mock()]);
         assert_eq!(
-            update_import(&deps, Some(String::from("# Suffix\n")))?,
+            update_import(&deps, Some(String::from("# Suffix\n"))).unwrap(),
             Some(String::from("import \"/data/Caddyfile\"\n# Suffix\n"))
         );
-        Ok(())
     }
 
     #[test]
-    fn test_generate_gallery() -> Result<()> {
-        let registry = get_mocked_registry()?;
+    fn test_generate_gallery() {
+        let registry = get_mocked_registry().unwrap();
         let gallery = generate_gallery_index(&registry);
         assert!(gallery.contains("portman projects (3)"));
         assert!(gallery.contains("href=\"https://app1.localhost\""));
-        assert!(gallery.contains("<p class=\"monospace\">https://github.com/user/app2.git</p>"));
-        assert!(gallery.contains("<p class=\"monospace\">/projects/app3</p>"));
-        Ok(())
+        assert!(gallery.contains("<p class=\"monospace\">\"/projects/app3\"</p>"));
     }
 }

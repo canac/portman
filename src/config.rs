@@ -34,20 +34,15 @@ impl Config {
     // Return None if the file doesn't exist
     pub fn load(deps: &impl ReadFile, path: &Path) -> Result<Option<Self>> {
         deps.read_file(path)
-            .with_context(|| format!("Failed to read config at \"{}\"", path.to_string_lossy()))?
+            .with_context(|| format!("Failed to read config at \"{}\"", path.display()))?
             .map(|config_str| Self::from_toml(&config_str))
             .transpose()
-            .with_context(|| {
-                format!(
-                    "Failed to deserialize config at \"{}\"",
-                    path.to_string_lossy()
-                )
-            })
+            .with_context(|| format!("Failed to deserialize config at \"{}\"", path.display()))
     }
 
     // Return a new configuration from a TOML string
     fn from_toml(toml_str: &str) -> Result<Self> {
-        let config: Config = toml::from_str(toml_str).context("Failed to deserialize config")?;
+        let config: Config = toml::from_str(toml_str)?;
 
         if config.ranges.is_empty() {
             bail!("Failed to validate config: port ranges must not be empty")
@@ -106,16 +101,15 @@ mod tests {
     use unimock::{matching, MockFn};
 
     #[test]
-    fn test_load_config() -> Result<()> {
+    fn test_load_config() {
         let deps = unimock::mock([dependencies::read_file::Fn
             .each_call(matching!(_))
             .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
             .in_any_order()]);
 
-        let config = Config::load(&deps, &PathBuf::new())?.unwrap();
+        let config = Config::load(&deps, &PathBuf::new()).unwrap().unwrap();
         assert_eq!(config.ranges, vec![(3000, 3999)]);
         assert_eq!(config.reserved, vec![]);
-        Ok(())
     }
 
     #[test]
@@ -130,11 +124,10 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_config() -> Result<()> {
-        let config = Config::from_toml("")?;
+    fn test_empty_config() {
+        let config = Config::from_toml("").unwrap();
         assert_eq!(config.ranges, vec![(3000, 3999)]);
         assert_eq!(config.reserved, vec![]);
-        Ok(())
     }
 
     #[test]
@@ -156,26 +149,26 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_ports() -> Result<()> {
+    fn test_valid_ports() {
         let config = Config::from_toml(
             "ranges = [[3000, 3002], [4000, 4005]]\nreserved = [3001, 4000, 4004]",
-        )?;
+        )
+        .unwrap();
         assert_eq!(
             config.get_valid_ports().collect::<Vec<_>>(),
             vec![3000, 3002, 4001, 4002, 4003, 4005]
         );
-        Ok(())
     }
 
     #[test]
-    fn test_display() -> Result<()> {
+    fn test_display() {
         let config = Config::from_toml(
             "ranges = [[3000, 3999], [4500, 4999]]\nreserved = [3000, 3100, 3200]",
-        )?;
+        )
+        .unwrap();
         assert_eq!(
             format!("{config}"),
             "Allowed port ranges: 3000-3999 & 4500-4999\nReserved ports: 3000, 3100, 3200"
         );
-        Ok(())
     }
 }

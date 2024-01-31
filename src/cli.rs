@@ -5,13 +5,6 @@ pub enum InitShell {
     Fish,
 }
 
-#[derive(ValueEnum, Clone)]
-pub enum Matcher {
-    Dir,
-    Git,
-    None,
-}
-
 #[derive(Subcommand)]
 pub enum Config {
     /// Display the current configuration
@@ -35,44 +28,65 @@ pub enum Cli {
     #[clap(subcommand)]
     Config(Config),
 
-    /// Print the port allocated for a project
+    /// Print a project's port
     Get {
-        /// The name of the project to look for (defaults to searching through projects using their configured matcher)
+        /// The name of the project to print (defaults to the active project)
+        project_name: Option<String>,
+
+        /// Print the project's name, directory, and linked port in addition to its port
+        #[clap(long, short = 'e')]
+        extended: bool,
+    },
+
+    /// Create a new project
+    Create {
+        /// The name of the project (defaults to the basename of the current directory unless --no-activate is present)
+        project_name: Option<String>,
+
+        /// Link the project to a port
+        #[clap(long, value_name = "PORT")]
+        link: Option<u16>,
+
+        /// Do not automatically activate this project
+        #[clap(long, short = 'A', requires("project_name"))]
+        no_activate: bool,
+
+        /// Modify the project if it already exists instead of failing
+        #[clap(long, short = 'o')]
+        overwrite: bool,
+    },
+
+    /// Delete an existing project
+    Delete {
+        /// The name of the project to delete (defaults to the active project)
         project_name: Option<String>,
     },
 
-    /// Allocate a port for a new project
-    Allocate {
-        /// The name of the project to allocate a port for (defaults to being provided by the matcher if not none)
-        #[clap(required_if_eq("matcher", "none"))]
-        project_name: Option<String>,
+    /// Cleanup projects whose directory has been deleted
+    Cleanup,
 
-        /// Allocate a specific port to the project instead of randomly assigning one
-        #[clap(long)]
-        port: Option<u16>,
-
-        /// The matching strategy to use when activating the project
-        #[clap(long, value_enum, default_value = "dir")]
-        matcher: Matcher,
-
-        /// Navigate to the project via a redirect instead of reverse-proxy
-        #[clap(long)]
-        redirect: bool,
-    },
-
-    /// Release an allocated port
-    Release {
-        /// The name of the project to release (defaults to searching through projects using their configured matcher)
-        project_name: Option<String>,
-    },
-
-    /// Reset all of the port assignments
+    /// Delete all existing projects
     Reset,
 
-    /// List all of the port assignments
+    /// List all projects
     List,
 
-    /// Print the generated Caddyfile for the allocated ports
+    /// Link a project to a port
+    Link {
+        /// The port to link
+        port: u16,
+
+        /// The name of the project to link (defaults to the active project)
+        project_name: Option<String>,
+    },
+
+    /// Unlink the port from a project
+    Unlink {
+        /// The name of the project to unlink (defaults to the active project)
+        project_name: Option<String>,
+    },
+
+    /// Print the generated Caddyfile
     Caddyfile,
 
     /// Regenerate the Caddyfile and restart caddy

@@ -8,4 +8,4 @@ echo -e "# Empty" > $HOMEBREW_PREFIX/etc/Caddyfile
 sudo $(which caddy) start --config $HOMEBREW_PREFIX/etc/Caddyfile
 
 echo "127.0.0.1 portman.localhost" | sudo tee -a /etc/hosts
-portman allocate
+portman create
