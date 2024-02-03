@@ -196,6 +196,7 @@ pub fn reload(
         std::process::Command::new("caddy")
             .args(["reload", "--adapter", "caddyfile", "--config"])
             .arg(caddyfile_path),
+        &mut (),
     )?;
     if status.success() {
         Ok(())
@@ -212,9 +213,10 @@ pub fn reload(
 
 #[cfg(test)]
 mod tests {
+    use unimock::Unimock;
+
     use super::*;
-    use crate::dependencies::mocks::data_dir_mock;
-    use crate::registry::tests::get_mocked_registry;
+    use crate::mocks::{data_dir_mock, get_mocked_registry};
 
     const GOLDEN_CADDYFILE: &str = "localhost {
 	file_server {
@@ -242,7 +244,7 @@ app3.localhost {
     #[test]
     fn test_caddyfile() {
         let registry = get_mocked_registry().unwrap();
-        let deps = unimock::mock([data_dir_mock()]);
+        let deps = Unimock::new(data_dir_mock());
         assert_eq!(
             generate_caddyfile(&deps, &registry).unwrap(),
             GOLDEN_CADDYFILE
@@ -251,7 +253,7 @@ app3.localhost {
 
     #[test]
     fn test_update_import_no_existing() {
-        let deps = unimock::mock([data_dir_mock()]);
+        let deps = Unimock::new(data_dir_mock());
         assert_eq!(
             update_import(&deps, None).unwrap(),
             Some(String::from("import \"/data/Caddyfile\"\n"))
@@ -260,7 +262,7 @@ app3.localhost {
 
     #[test]
     fn test_update_import_already_present() {
-        let deps = unimock::mock([data_dir_mock()]);
+        let deps = Unimock::new(data_dir_mock());
         assert!(update_import(
             &deps,
             Some(String::from(
@@ -273,7 +275,7 @@ app3.localhost {
 
     #[test]
     fn test_update_import_prepend() {
-        let deps = unimock::mock([data_dir_mock()]);
+        let deps = Unimock::new(data_dir_mock());
         assert_eq!(
             update_import(&deps, Some(String::from("# Suffix\n"))).unwrap(),
             Some(String::from("import \"/data/Caddyfile\"\n# Suffix\n"))

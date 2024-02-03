@@ -7,6 +7,8 @@ mod cli;
 mod config;
 mod dependencies;
 mod init;
+#[cfg(test)]
+mod mocks;
 mod registry;
 
 use crate::allocator::PortAllocator;
@@ -25,7 +27,7 @@ use registry::Project;
 use std::fmt::Write;
 use std::io::{stdout, IsTerminal};
 use std::path::PathBuf;
-use std::process::{self, Command};
+use std::process;
 
 // Find and return a reference to the active project based on the current directory
 fn active_project<'registry>(
@@ -51,7 +53,7 @@ fn format_project(name: &str, project: &Project) -> String {
 }
 
 fn create(
-    deps: &(impl ChoosePort + WorkingDirectory + 'static),
+    deps: &(impl ChoosePort + WorkingDirectory),
     registry: &mut Registry,
     name: Option<String>,
     no_activate: bool,
@@ -80,7 +82,7 @@ fn create(
         if let Some(port) = linked_port {
             registry.link(deps, &name, port)?;
         }
-        let project = registry.update(deps, &name, directory)?;
+        let project = registry.update(&name, directory)?;
         return Ok((name, project));
     }
 
@@ -89,7 +91,7 @@ fn create(
 }
 
 fn cleanup(
-    deps: &(impl CheckPath + DataDir + Environment + Exec + ReadFile + WriteFile + 'static),
+    deps: &(impl CheckPath + DataDir + Environment + Exec + ReadFile + WriteFile),
     registry: &mut Registry,
 ) -> Result<Vec<(String, Project)>> {
     // Find all existing projects with a directory that doesn't exist
@@ -105,7 +107,7 @@ fn cleanup(
             })
         })
         .collect();
-    registry.delete_many(deps, removed_projects)
+    registry.delete_many(removed_projects)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -118,8 +120,7 @@ fn run(
           + Exec
           + ReadFile
           + WriteFile
-          + WorkingDirectory
-          + 'static),
+          + WorkingDirectory),
 ) -> Result<()> {
     let data_dir = deps.get_data_dir()?;
     let config_env = deps.read_var("PORTMAN_CONFIG").ok();
@@ -169,7 +170,8 @@ fn run(
             ConfigSubcommand::Edit => {
                 let editor = deps.read_var("EDITOR")?;
                 println!("Opening \"{}\" with \"{editor}\"", config_path.display());
-                let (status, _) = deps.exec(Command::new(editor).arg(config_path))?;
+                let (status, _) =
+                    deps.exec(std::process::Command::new(editor).arg(config_path), &mut ())?;
                 if !status.success() {
                     bail!("Editor command failed to execute successfully");
                 }
@@ -241,7 +243,7 @@ fn run(
                 Some(name) => name,
                 None => active_project(deps, &registry)?.0.clone(),
             };
-            let project = registry.delete(deps, &project_name)?;
+            let project = registry.delete(&project_name)?;
             registry.save(deps)?;
             println!(
                 "Deleted project {}",
@@ -270,7 +272,7 @@ fn run(
 
         Cli::Reset => {
             let mut registry = Registry::new(deps, port_allocator)?;
-            registry.delete_all(deps);
+            registry.delete_all();
             registry.save(deps)?;
             println!("Deleted all projects");
         }
@@ -305,7 +307,7 @@ fn run(
                 Some(name) => name,
                 None => active_project(deps, &registry)?.0.clone(),
             };
-            let unlinked_port = registry.unlink(deps, &project_name)?;
+            let unlinked_port = registry.unlink(&project_name)?;
             registry.save(deps)?;
             match unlinked_port {
                 Some(port) => println!("Unlinked project {project_name} from port {port}"),
@@ -339,29 +341,18 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dependencies::mocks::{cwd_mock, data_dir_mock, exec_mock, write_file_mock};
+    use crate::mocks::{
+        args_mock, choose_port_mock, cwd_mock, data_dir_mock, exec_mock, get_mocked_registry,
+        read_registry_mock, read_var_mock, write_file_mock,
+    };
     use std::os::unix::process::ExitStatusExt;
-    use unimock::{matching, Clause, MockFn};
+    use unimock::{matching, Clause, MockFn, Unimock};
 
-    fn choose_port_mock() -> Clause {
-        dependencies::choose_port::Fn
-            .each_call(matching!(_))
-            .answers(|_| Some(3000))
-            .in_any_order()
-    }
-
-    fn read_file_mock() -> Clause {
-        dependencies::read_file::Fn
-            .each_call(matching!(_))
+    fn read_file_mock() -> impl Clause {
+        dependencies::ReadFileMock
+            .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml") || path == &PathBuf::from("/homebrew/etc/Caddyfile")))
             .answers(|_| Ok(None))
-            .in_any_order()
-    }
-
-    fn read_var_mock() -> Clause {
-        dependencies::read_var::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(String::from("editor")))
-            .in_any_order()
+            .at_least_times(1)
     }
 
     #[test]
@@ -396,12 +387,8 @@ mod tests {
 
     #[test]
     fn test_create() {
-        let mocked_deps = unimock::mock([data_dir_mock(), read_file_mock()]);
-        let config = Config::default();
-        let allocator = PortAllocator::new(config.get_valid_ports());
-        let mut registry = Registry::new(&mocked_deps, allocator).unwrap();
-
-        let mocked_deps = unimock::mock([choose_port_mock(), cwd_mock()]);
+        let mut registry = get_mocked_registry().unwrap();
+        let mocked_deps = Unimock::new((choose_port_mock(), cwd_mock("project")));
         let (name, project) = create(
             &mocked_deps,
             &mut registry,
@@ -415,8 +402,8 @@ mod tests {
         assert_eq!(
             project,
             Project {
-                port: 3000,
-                directory: Some(PathBuf::from("/portman")),
+                port: 3004,
+                directory: Some(PathBuf::from("/projects/project")),
                 linked_port: None,
             },
         );
@@ -424,42 +411,23 @@ mod tests {
 
     #[test]
     fn test_create_overwrite() {
-        let mocked_deps = unimock::mock([data_dir_mock(), read_file_mock()]);
-        let config = Config::default();
-        let allocator = PortAllocator::new(config.get_valid_ports());
-        let mut registry = Registry::new(&mocked_deps, allocator).unwrap();
-
-        let mocked_deps = unimock::mock([
-            choose_port_mock(),
-            dependencies::get_cwd::Fn
-                .each_call(matching!(_))
-                .answers(|()| Ok(PathBuf::from("/portman/project")))
-                .in_any_order(),
-        ]);
-        create(
-            &mocked_deps,
-            &mut registry,
-            Some(String::from("project")),
-            false,
-            Some(3000),
-            false,
-        )
-        .unwrap();
+        let mut registry = get_mocked_registry().unwrap();
+        let mocked_deps = Unimock::new(cwd_mock("app2"));
         let (name, project) = create(
             &mocked_deps,
             &mut registry,
-            Some(String::from("project")),
+            Some(String::from("app2")),
             false,
             Some(3100),
             true,
         )
         .unwrap();
-        assert_eq!(name, String::from("project"));
+        assert_eq!(name, String::from("app2"));
         assert_eq!(
             project,
             Project {
-                port: 3000,
-                directory: Some(PathBuf::from("/portman/project")),
+                port: 3002,
+                directory: Some(PathBuf::from("/projects/app2")),
                 linked_port: Some(3100),
             },
         );
@@ -467,37 +435,13 @@ mod tests {
 
     #[test]
     fn test_cleanup() {
-        let mocked_deps = unimock::mock([
-            data_dir_mock(),
-            dependencies::read_file::Fn
-                .each_call(matching!(_))
-                .answers(|_| {
-                    Ok(Some(String::from(
-                        "[projects]
-app1 = { port = 3001 }
-app2 = { port = 3002 }
-app3 = { port = 3003, directory = '/projects/app3' }
-app4 = { port = 3004, directory = '/projects/app4' }",
-                    )))
-                })
-                .in_any_order(),
-        ]);
-        let config = Config::default();
-        let allocator = PortAllocator::new(config.get_valid_ports());
-        let mut registry = Registry::new(&mocked_deps, allocator).unwrap();
-
-        let mocked_deps = unimock::mock([
-            dependencies::path_exists::Fn
-                .next_call(matching!((path) if path == &PathBuf::from("/projects/app3")))
-                .answers(|_| false)
-                .once()
-                .in_order(),
-            dependencies::path_exists::Fn
-                .next_call(matching!((path) if path == &PathBuf::from("/projects/app4")))
-                .answers(|_| true)
-                .once()
-                .in_order(),
-        ]);
+        let mut registry = get_mocked_registry().unwrap();
+        let mocked_deps = Unimock::new(
+            dependencies::CheckPathMock
+                .each_call(matching!((path) if path == &PathBuf::from("/projects/app3")))
+                .returns(false)
+                .n_times(1),
+        );
 
         let cleaned_projects = cleanup(&mocked_deps, &mut registry).unwrap();
         assert_eq!(cleaned_projects.len(), 1);
@@ -506,15 +450,12 @@ app4 = { port = 3004, directory = '/projects/app4' }",
 
     #[test]
     fn test_cli_version() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![String::from("portman"), String::from("--version")])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman --version"),
             data_dir_mock(),
             read_file_mock(),
             read_var_mock(),
-        ]);
+        ));
 
         let result = run(&mocked_deps);
         assert!(result.is_ok());
@@ -522,19 +463,17 @@ app4 = { port = 3004, directory = '/projects/app4' }",
 
     #[test]
     fn test_cli_create() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![String::from("portman"), String::from("create")])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman create"),
             choose_port_mock(),
-            cwd_mock(),
+            cwd_mock("project"),
             data_dir_mock(),
             exec_mock(),
             read_file_mock(),
+            read_registry_mock(None),
             read_var_mock(),
             write_file_mock(),
-        ]);
+        ));
 
         let result = run(&mocked_deps);
         assert!(result.is_ok());
@@ -542,23 +481,16 @@ app4 = { port = 3004, directory = '/projects/app4' }",
 
     #[test]
     fn test_cli_create_no_activate() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("create"),
-                    String::from("project"),
-                    String::from("--no-activate"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman create project --no-activate"),
             choose_port_mock(),
             data_dir_mock(),
             exec_mock(),
             read_file_mock(),
+            read_registry_mock(None),
             read_var_mock(),
             write_file_mock(),
-        ]);
+        ));
 
         let result = run(&mocked_deps);
         assert!(result.is_ok());
@@ -566,19 +498,12 @@ app4 = { port = 3004, directory = '/projects/app4' }",
 
     #[test]
     fn test_cli_create_no_activate_no_name() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("create"),
-                    String::from("--no-activate"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman create --no-activate"),
             data_dir_mock(),
             read_file_mock(),
             read_var_mock(),
-        ]);
+        ));
 
         let result = run(&mocked_deps);
         assert!(result.is_err());
@@ -586,88 +511,64 @@ app4 = { port = 3004, directory = '/projects/app4' }",
 
     #[test]
     fn test_edit_config() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("config"),
-                    String::from("edit"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman config edit"),
             data_dir_mock(),
             exec_mock(),
             read_file_mock(),
             read_var_mock(),
-        ]);
+        ));
 
         assert!(run(&mocked_deps).is_ok());
     }
 
     #[test]
     fn test_edit_config_no_editor_env() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("config"),
-                    String::from("edit"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman config edit"),
             data_dir_mock(),
             read_file_mock(),
-            dependencies::read_var::Fn
-                .each_call(matching!(_))
+            dependencies::EnvironmentMock
+                .each_call(matching!("PORTMAN_CONFIG"))
                 .answers(|_| bail!("Failed"))
-                .in_any_order(),
-        ]);
+                .n_times(1),
+            dependencies::EnvironmentMock
+                .each_call(matching!("EDITOR"))
+                .answers(|_| bail!("Failed"))
+                .n_times(1),
+        ));
 
         assert!(run(&mocked_deps).is_err());
     }
 
     #[test]
     fn test_edit_config_editor_exec_fails() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("config"),
-                    String::from("edit"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman config edit"),
             data_dir_mock(),
-            dependencies::exec::Fn
-                .each_call(matching!(_))
+            dependencies::ExecMock
+                .each_call(matching!((command, _) if command.get_program() == "editor"))
                 .answers(|_| bail!("Failed"))
-                .in_any_order(),
+                .n_times(1),
             read_file_mock(),
             read_var_mock(),
-        ]);
+        ));
 
         assert!(run(&mocked_deps).is_err());
     }
 
     #[test]
     fn test_edit_config_editor_command_fails() {
-        let mocked_deps = unimock::mock([
-            dependencies::get_args::Fn
-                .each_call(matching!())
-                .returns(vec![
-                    String::from("portman"),
-                    String::from("config"),
-                    String::from("edit"),
-                ])
-                .in_any_order(),
+        let mocked_deps = Unimock::new((
+            args_mock("portman config edit"),
             data_dir_mock(),
-            dependencies::exec::Fn
-                .each_call(matching!(_))
+            dependencies::ExecMock
+                .each_call(matching!((command, _) if command.get_program() == "editor"))
                 .answers(|_| Ok((ExitStatusExt::from_raw(1), String::new())))
-                .in_any_order(),
+                .n_times(1),
             read_file_mock(),
             read_var_mock(),
-        ]);
+        ));
 
         assert!(run(&mocked_deps).is_err());
     }

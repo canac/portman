@@ -98,28 +98,34 @@ mod tests {
     use super::*;
     use crate::dependencies;
     use std::path::PathBuf;
-    use unimock::{matching, MockFn};
+    use unimock::{matching, MockFn, Unimock};
 
     #[test]
     fn test_load_config() {
-        let deps = unimock::mock([dependencies::read_file::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
-            .in_any_order()]);
+        let deps = Unimock::new(
+            dependencies::ReadFileMock
+                .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
+                .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
+                .n_times(1),
+        );
 
-        let config = Config::load(&deps, &PathBuf::new()).unwrap().unwrap();
+        let config = Config::load(&deps, &PathBuf::from("config.toml"))
+            .unwrap()
+            .unwrap();
         assert_eq!(config.ranges, vec![(3000, 3999)]);
         assert_eq!(config.reserved, vec![]);
     }
 
     #[test]
     fn test_load_missing_config() {
-        let deps = unimock::mock([dependencies::read_file::Fn
-            .each_call(matching!(_))
-            .answers(|_| bail!("Read error"))
-            .in_any_order()]);
+        let deps = Unimock::new(
+            dependencies::ReadFileMock
+                .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
+                .answers(|_| bail!("Read error"))
+                .n_times(1),
+        );
 
-        let config = Config::load(&deps, &PathBuf::new());
+        let config = Config::load(&deps, &PathBuf::from("config.toml"));
         assert!(config.is_err());
     }
 

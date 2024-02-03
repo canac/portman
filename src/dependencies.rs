@@ -9,23 +9,23 @@ use std::{
     str::from_utf8,
 };
 
-#[entrait(pub Args)]
+#[entrait(pub Args, mock_api=ArgsMock)]
 fn get_args(_deps: &impl std::any::Any) -> Vec<String> {
     std::env::args().collect()
 }
 
-#[entrait(pub CheckPath)]
+#[entrait(pub CheckPath, mock_api=CheckPathMock)]
 fn path_exists(_deps: &impl std::any::Any, path: &Path) -> bool {
     path.exists()
 }
 
-#[entrait(pub ChoosePort)]
+#[entrait(pub ChoosePort, mock_api=ChoosePortMock)]
 fn choose_port(_deps: &impl std::any::Any, available_ports: &HashSet<u16>) -> Option<u16> {
     let mut rng = rand::thread_rng();
     available_ports.iter().choose(&mut rng).copied()
 }
 
-#[entrait(pub DataDir)]
+#[entrait(pub DataDir, mock_api=DataDirMock)]
 fn get_data_dir(_deps: &impl std::any::Any) -> Result<PathBuf> {
     let project_dirs = directories::ProjectDirs::from("com", "canac", "portman")
         .context("Failed to determine application directories")?;
@@ -33,14 +33,20 @@ fn get_data_dir(_deps: &impl std::any::Any) -> Result<PathBuf> {
     Ok(data_dir)
 }
 
-#[entrait(pub Environment)]
+#[entrait(pub Environment, mock_api=EnvironmentMock)]
 pub fn read_var(_deps: &impl std::any::Any, var: &str) -> Result<String> {
     let var_name = OsString::from(var);
     std::env::var(var_name).with_context(|| format!("Failed to read ${var} environment variable"))
 }
 
-#[entrait(pub Exec)]
-fn exec(_deps: &impl std::any::Any, command: &mut Command) -> Result<(ExitStatus, String)> {
+// The second unused arg is a workaround so that we can match against command in mocks
+// https://github.com/audunhalland/unimock/issues/40
+#[entrait(pub Exec, mock_api=ExecMock)]
+fn exec(
+    _deps: &impl std::any::Any,
+    command: &mut Command,
+    _: &mut (),
+) -> Result<(ExitStatus, String)> {
     let output = command.output().with_context(|| {
         format!(
             "Failed to run command \"{}\"",
@@ -59,7 +65,7 @@ fn exec(_deps: &impl std::any::Any, command: &mut Command) -> Result<(ExitStatus
     Ok((status, stdout))
 }
 
-#[entrait(pub ReadFile)]
+#[entrait(pub ReadFile, mock_api=ReadFileMock)]
 fn read_file(_deps: &impl std::any::Any, path: &Path) -> Result<Option<String>> {
     match std::fs::read_to_string(path) {
         Ok(content) => Ok(Some(content)),
@@ -74,12 +80,12 @@ fn read_file(_deps: &impl std::any::Any, path: &Path) -> Result<Option<String>> 
     }
 }
 
-#[entrait(pub WorkingDirectory)]
+#[entrait(pub WorkingDirectory, mock_api=WorkingDirectoryMock)]
 fn get_cwd(_deps: &impl std::any::Any) -> Result<PathBuf> {
     std::env::current_dir().context("Failed to get current directory")
 }
 
-#[entrait(pub WriteFile)]
+#[entrait(pub WriteFile, mock_api=WriteFileMock)]
 fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result<()> {
     let parent_dir = path.parent().with_context(|| {
         format!(
@@ -94,44 +100,4 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
         )
     })?;
     Ok(std::fs::write(path, contents)?)
-}
-
-#[cfg(test)]
-pub mod mocks {
-    use super::{exec, get_cwd, get_data_dir, write_file};
-    use std::path::PathBuf;
-    use unimock::{matching, Clause, MockFn};
-
-    pub fn cwd_mock() -> Clause {
-        get_cwd::Fn
-            .each_call(matching!(_))
-            .answers(|()| Ok(PathBuf::from("/portman")))
-            .in_any_order()
-    }
-
-    pub fn data_dir_mock() -> Clause {
-        get_data_dir::Fn
-            .each_call(matching!(_))
-            .answers(|()| Ok(std::path::PathBuf::from("/data")))
-            .in_any_order()
-    }
-
-    pub fn exec_mock() -> Clause {
-        exec::Fn
-            .each_call(matching!(_))
-            .answers(|_| {
-                Ok((
-                    std::os::unix::process::ExitStatusExt::from_raw(0),
-                    String::new(),
-                ))
-            })
-            .in_any_order()
-    }
-
-    pub fn write_file_mock() -> Clause {
-        write_file::Fn
-            .each_call(matching!(_))
-            .answers(|_| Ok(()))
-            .in_any_order()
-    }
 }

@@ -41,49 +41,42 @@ impl PortAllocator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dependencies;
-    use unimock::{matching, MockFn, Unimock};
-
-    fn get_deps() -> Unimock {
-        unimock::mock([dependencies::choose_port::Fn
-            .each_call(matching!(_))
-            .answers(|available_ports| available_ports.iter().min().copied())
-            .in_any_order()])
-    }
+    use crate::mocks::choose_port_mock;
+    use unimock::Unimock;
 
     #[test]
     fn test_random_chooser() {
         let range = 3000..=3999;
         let mut allocator = PortAllocator::new(range.clone());
-        let deps = get_deps();
-        assert!(range.contains(&allocator.allocate(&deps, None).unwrap()));
+        let mocked_deps = Unimock::new(choose_port_mock());
+        assert!(range.contains(&allocator.allocate(&mocked_deps, None).unwrap()));
     }
 
     #[test]
     fn test_discard() {
         let mut allocator = PortAllocator::new(3000..=3001);
-        let deps = get_deps();
+        let mocked_deps = Unimock::new(choose_port_mock());
         allocator.discard(3000);
-        assert_eq!(allocator.allocate(&deps, None).unwrap(), 3001);
-        assert!(allocator.allocate(&deps, None).is_err());
+        assert_eq!(allocator.allocate(&mocked_deps, None).unwrap(), 3001);
+        assert!(allocator.allocate(&mocked_deps, None).is_err());
     }
 
     #[test]
     fn test_allocate() {
         let mut allocator = PortAllocator::new(3000..=3001);
-        let deps = get_deps();
-        assert!(allocator.allocate(&deps, None).is_ok());
-        assert!(allocator.allocate(&deps, None).is_ok());
-        assert!(allocator.allocate(&deps, None).is_err());
+        let mocked_deps = Unimock::new(choose_port_mock());
+        assert!(allocator.allocate(&mocked_deps, None).is_ok());
+        assert!(allocator.allocate(&mocked_deps, None).is_ok());
+        assert!(allocator.allocate(&mocked_deps, None).is_err());
     }
 
     #[test]
     fn test_desired_port() {
         let mut allocator = PortAllocator::new(3000..=3002);
-        let deps = get_deps();
-        assert_eq!(allocator.allocate(&deps, Some(3001)).unwrap(), 3001);
-        assert_eq!(allocator.allocate(&deps, Some(4000)).unwrap(), 3000);
-        assert_eq!(allocator.allocate(&deps, None).unwrap(), 3002);
-        assert!(allocator.allocate(&deps, None).is_err());
+        let mocked_deps = Unimock::new(choose_port_mock());
+        assert_eq!(allocator.allocate(&mocked_deps, Some(3001)).unwrap(), 3001);
+        assert_eq!(allocator.allocate(&mocked_deps, Some(4000)).unwrap(), 3000);
+        assert_eq!(allocator.allocate(&mocked_deps, None).unwrap(), 3002);
+        assert!(allocator.allocate(&mocked_deps, None).is_err());
     }
 }
