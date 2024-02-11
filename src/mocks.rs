@@ -12,11 +12,7 @@ use unimock::{matching, Clause, MockFn, Unimock};
 pub fn args_mock(args: &str) -> impl Clause {
     ArgsMock
         .each_call(matching!())
-        .returns(
-            args.split(' ')
-                .map(|arg| String::from(arg))
-                .collect::<Vec<_>>(),
-        )
+        .returns(args.split(' ').map(String::from).collect::<Vec<_>>())
         .n_times(1)
 }
 
@@ -28,17 +24,17 @@ pub fn choose_port_mock() -> impl Clause {
 }
 
 pub fn cwd_mock(project: &str) -> impl Clause {
-    let path = PathBuf::from(format!("/projects/{}", project));
+    let path = PathBuf::from(format!("/projects/{project}"));
     WorkingDirectoryMock
         .each_call(matching!())
-        .answers(move |_| Ok(path.clone()))
+        .answers(move |()| Ok(path.clone()))
         .at_least_times(1)
 }
 
 pub fn data_dir_mock() -> impl Clause {
     DataDirMock
         .each_call(matching!())
-        .answers(|_| Ok(std::path::PathBuf::from("/data")))
+        .answers(|()| Ok(std::path::PathBuf::from("/data")))
         .at_least_times(1)
 }
 

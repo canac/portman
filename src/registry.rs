@@ -241,7 +241,7 @@ impl Registry {
             bail!("Project {project_name} does not exist");
         }
 
-        for (name, project) in &mut self.projects.iter_mut() {
+        for (name, project) in &mut self.projects {
             if project.port == linked_port {
                 // Take the port from the project so that it can be used by the linked port
                 project.port = self.allocator.allocate(deps, None)?;
@@ -598,7 +598,7 @@ linked_port = 3000",
         assert!(registry
             .create(
                 &mocked_deps,
-                &"app4",
+                "app4",
                 Some(PathBuf::from("/projects/app3")),
                 None,
             )

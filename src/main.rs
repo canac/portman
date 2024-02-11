@@ -441,7 +441,7 @@ mod tests {
 
         let cleaned_projects = cleanup(&mocked_deps, &mut registry).unwrap();
         assert_eq!(cleaned_projects.len(), 1);
-        assert_eq!(cleaned_projects.get(0).unwrap().0, String::from("app3"));
+        assert_eq!(cleaned_projects.first().unwrap().0, String::from("app3"));
     }
 
     #[test]
