@@ -263,17 +263,16 @@ impl Registry {
         Ok(())
     }
 
-    // Unlink the port linked to a project and return the previous linked port
-    pub fn unlink(&mut self, project_name: &str) -> Result<Option<u16>> {
-        let Some(project) = self.projects.get_mut(project_name) else {
-            bail!("Project {project_name} does not exist");
-        };
-
-        let previous_linked_port = project.linked_port.take();
-        if previous_linked_port.is_some() {
-            self.dirty = true;
+    // Unlink the port linked to a project and return the name of the project it was linked to
+    pub fn unlink(&mut self, port: u16) -> Option<String> {
+        for (name, project) in &mut self.projects {
+            if project.linked_port == Some(port) {
+                project.linked_port = None;
+                self.dirty = true;
+                return Some(name.clone());
+            }
         }
-        Ok(previous_linked_port)
+        None
     }
 
     // Find and return the project that matches the current working directory, if any
@@ -762,21 +761,14 @@ linked_port = 3000",
     #[test]
     fn test_unlink() {
         let mut registry = get_mocked_registry().unwrap();
-        assert_eq!(registry.unlink("app2").unwrap().unwrap(), 3000);
+        assert_eq!(registry.unlink(3000).unwrap(), String::from("app2"));
         assert!(registry.dirty);
     }
 
     #[test]
-    fn test_unlink_no_previous() {
+    fn test_unlink_not_linked() {
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.unlink("app1").unwrap().is_none());
-        assert!(!registry.dirty);
-    }
-
-    #[test]
-    fn test_unlink_nonexistent() {
-        let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.unlink("app4").is_err());
+        assert!(registry.unlink(3001).is_none());
         assert!(!registry.dirty);
     }
 

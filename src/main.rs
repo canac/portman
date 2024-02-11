@@ -298,20 +298,16 @@ fn run(
             };
             registry.link(deps, &project_name, port)?;
             registry.save(deps)?;
-            println!("Linked project {project_name} to port {port}");
+            println!("Linked port {port} to project {project_name}");
         }
 
-        Cli::Unlink { project_name } => {
+        Cli::Unlink { port } => {
             let mut registry = Registry::new(deps, port_allocator)?;
-            let project_name = match project_name {
-                Some(name) => name,
-                None => active_project(deps, &registry)?.0.clone(),
-            };
-            let unlinked_port = registry.unlink(&project_name)?;
+            let unlinked_port = registry.unlink(port);
             registry.save(deps)?;
             match unlinked_port {
-                Some(port) => println!("Unlinked project {project_name} from port {port}"),
-                None => println!("Project {project_name} was not linked to a port"),
+                Some(project_name) => println!("Unlinked port {port} from project {project_name}"),
+                None => println!("Port {port} was not linked to a project"),
             };
         }
 

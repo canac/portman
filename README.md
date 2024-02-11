@@ -216,13 +216,13 @@ Deletes all projects.
 
 Lists each project in alphabetical order with its ports, directory, and linked port.
 
-### `portman link $port [project-name]`
+### `portman link <port> [project-name]`
 
 Links a project to the specified port. `project-name` defaults to the active project.
 
-### `portman unlink [project-name]`
+### `portman unlink <port>`
 
-Removes the linked port from a project. `project-name` defaults to the active project.
+Unlinks the port from the project it was linked to.
 
 ### `portman caddyfile`
 

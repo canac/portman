@@ -80,10 +80,10 @@ pub enum Cli {
         project_name: Option<String>,
     },
 
-    /// Unlink the port from a project
+    /// Unlink a port from a project
     Unlink {
-        /// The name of the project to unlink (defaults to the active project)
-        project_name: Option<String>,
+        /// The port to unlink
+        port: u16,
     },
 
     /// Print the generated Caddyfile
