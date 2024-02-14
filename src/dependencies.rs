@@ -71,13 +71,13 @@ fn read_file(_deps: &impl std::any::Any, path: &Path) -> Result<Option<String>> 
         Ok(content) => Ok(Some(content)),
         Err(io_err) => {
             if matches!(io_err.kind(), std::io::ErrorKind::NotFound) {
-                // If the file doesn't exist, load the default config
                 Ok(None)
             } else {
-                Err(io_err.into())
+                Err(io_err)
             }
         }
     }
+    .with_context(|| format!("Failed to read file at \"{}\"", path.display()))
 }
 
 #[entrait(pub WorkingDirectory, mock_api=WorkingDirectoryMock)]
@@ -99,5 +99,6 @@ fn write_file(_deps: &impl std::any::Any, path: &Path, contents: &str) -> Result
             parent_dir.display()
         )
     })?;
-    Ok(std::fs::write(path, contents)?)
+    std::fs::write(path, contents)
+        .with_context(|| format!("Failed to write file at \"{}\"", path.display()))
 }

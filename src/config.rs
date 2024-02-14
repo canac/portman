@@ -1,4 +1,5 @@
-use anyhow::{bail, Context, Result};
+use crate::error::{ApplicationError, Result};
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
@@ -34,22 +35,22 @@ impl Config {
     // Return None if the file doesn't exist
     pub fn load(deps: &impl ReadFile, path: &Path) -> Result<Option<Self>> {
         deps.read_file(path)
-            .with_context(|| format!("Failed to read config at \"{}\"", path.display()))?
+            .map_err(ApplicationError::InvalidConfig)?
             .map(|config_str| Self::from_toml(&config_str))
             .transpose()
-            .with_context(|| format!("Failed to deserialize config at \"{}\"", path.display()))
+            .map_err(ApplicationError::InvalidConfig)
     }
 
     // Return a new configuration from a TOML string
-    fn from_toml(toml_str: &str) -> Result<Self> {
+    fn from_toml(toml_str: &str) -> anyhow::Result<Self> {
         let config: Config = toml::from_str(toml_str)?;
 
         if config.ranges.is_empty() {
-            bail!("Failed to validate config: port ranges must not be empty")
+            bail!("Validation error: port ranges must not be empty\n")
         }
         for (start, end) in &config.ranges {
             if start >= end {
-                bail!("Failed to validate config: at port range ({start}-{end}), start must be less than range end")
+                bail!("Validation error at port range ({start}-{end}), start must be less than range end\n")
             }
         }
 
@@ -174,7 +175,16 @@ mod tests {
         .unwrap();
         assert_eq!(
             format!("{config}"),
-            "Allowed port ranges: 3000-3999 & 4500-4999\nReserved ports: 3000, 3100, 3200"
+            "Allowed port ranges: 3000-3999 & 4500-4999\nReserved ports: 3000, 3100, 3200",
+        );
+    }
+
+    #[test]
+    fn test_display_none_reserved() {
+        let config = Config::from_toml("ranges = [[3000, 3999], [4500, 4999]]").unwrap();
+        assert_eq!(
+            format!("{config}"),
+            "Allowed port ranges: 3000-3999 & 4500-4999",
         );
     }
 }

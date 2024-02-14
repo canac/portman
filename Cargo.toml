@@ -17,6 +17,7 @@ directories = "5.0.1"
 entrait = { version = "0.6.0", features = ["unimock"] }
 rand = "0.8.5"
 serde = { version = "1.0.196", features = ["derive"] }
+thiserror = "1.0.56"
 toml = "0.8.8"
 unimock = "0.5.8"
 

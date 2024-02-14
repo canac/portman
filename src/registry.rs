@@ -1,7 +1,8 @@
 use crate::caddy::reload;
 use crate::dependencies::{ChoosePort, DataDir, Exec, ReadFile, WorkingDirectory, WriteFile};
+use crate::error::{ApplicationError, Result};
 use crate::{allocator::PortAllocator, dependencies::Environment};
-use anyhow::{bail, Context, Result};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -146,19 +147,19 @@ impl Registry {
         Self::validate_name(name)?;
 
         if self.projects.contains_key(name) {
-            bail!("A project already has the name {name}");
+            return Err(ApplicationError::DuplicateProject(name.to_string()));
         }
 
         if let Some(directory) = directory.as_ref() {
-            if self
+            if let Some((name, _)) = self
                 .projects
-                .values()
-                .any(|project| project.directory.as_ref() == Some(directory))
+                .iter()
+                .find(|(_, project)| project.directory.as_ref() == Some(directory))
             {
-                bail!(
-                    "A project already has the directory \"{}\"",
-                    directory.display()
-                );
+                return Err(ApplicationError::DuplicateDirectory(
+                    name.clone(),
+                    directory.clone(),
+                ));
             }
         }
 
@@ -181,10 +182,10 @@ impl Registry {
 
     // Update a project and return the updated project
     pub fn update(&mut self, name: &str, directory: Option<PathBuf>) -> Result<Project> {
-        let Some(project) = self.projects.get_mut(name) else {
-            bail!("Project {name} does not exist");
-        };
-
+        let project = self
+            .projects
+            .get_mut(name)
+            .ok_or_else(|| ApplicationError::NonExistentProject(String::from(name)))?;
         if project.directory != directory {
             project.directory = directory;
             self.dirty = true;
@@ -194,9 +195,10 @@ impl Registry {
 
     // Delete a project and return the deleted project and its names
     pub fn delete(&mut self, name: &str) -> Result<Project> {
-        let Some(project) = self.projects.remove(name) else {
-            bail!("Project {name} does not exist");
-        };
+        let project = self
+            .projects
+            .remove(name)
+            .ok_or_else(|| ApplicationError::NonExistentProject(String::from(name)))?;
         self.dirty = true;
         Ok(project)
     }
@@ -206,11 +208,11 @@ impl Registry {
         let deleted_projects: Vec<(String, Project)> = project_names
             .into_iter()
             .map(|name| {
-                if let Some(project) = self.projects.remove(&name) {
-                    Ok((name, project))
-                } else {
-                    bail!("Project {name} does not exist");
-                }
+                let project = self
+                    .projects
+                    .remove(&name)
+                    .ok_or_else(|| ApplicationError::NonExistentProject(name.clone()))?;
+                Ok((name, project))
             })
             .collect::<Result<Vec<_>>>()?;
         if !deleted_projects.is_empty() {
@@ -238,7 +240,9 @@ impl Registry {
         linked_port: u16,
     ) -> Result<()> {
         if !self.projects.contains_key(project_name) {
-            bail!("Project {project_name} does not exist");
+            return Err(ApplicationError::NonExistentProject(String::from(
+                project_name,
+            )));
         }
 
         for (name, project) in &mut self.projects {
@@ -314,24 +318,39 @@ impl Registry {
     }
 
     // Validate a project name
-    pub fn validate_name(name: &str) -> Result<()> {
+    fn validate_name(name: &str) -> Result<()> {
         if name.is_empty() {
-            bail!("Project name cannot be empty")
+            return Err(ApplicationError::InvalidProjectName(
+                String::from(name),
+                "must not be empty",
+            ));
         }
         if name.len() > 63 {
-            bail!("Project name cannot exceed 63 characters")
+            return Err(ApplicationError::InvalidProjectName(
+                String::from(name),
+                "must not exceed 63 characters",
+            ));
         }
         if name.starts_with('-') || name.ends_with('-') {
-            bail!("Project name cannot start or end with a dash")
+            return Err(ApplicationError::InvalidProjectName(
+                String::from(name),
+                "must not start or end with a dash",
+            ));
         }
         if name.contains("--") {
-            bail!("Project name cannot contain consecutive dashes")
+            return Err(ApplicationError::InvalidProjectName(
+                String::from(name),
+                "must not contain consecutive dashes",
+            ));
         }
         if name
             .chars()
             .any(|char| !(char.is_ascii_lowercase() || char.is_numeric() || char == '-'))
         {
-            bail!("Project name can only contain the lowercase alphanumeric characters and dashes")
+            return Err(ApplicationError::InvalidProjectName(
+                String::from(name),
+                "must only contain lowercase alphanumeric characters and dashes",
+            ));
         }
         Ok(())
     }
@@ -346,6 +365,7 @@ pub mod tests {
         choose_port_mock, cwd_mock, data_dir_mock, get_mocked_registry, read_registry_mock,
         read_var_mock, write_file_mock,
     };
+    use anyhow::bail;
     use std::os::unix::process::ExitStatusExt;
     use unimock::{matching, Clause, MockFn, Unimock};
 

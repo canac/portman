@@ -1,6 +1,6 @@
 use crate::dependencies::{DataDir, Environment, Exec, ReadFile, WriteFile};
 use crate::registry::Registry;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::fmt::Write;
 use std::path::PathBuf;
 
@@ -155,27 +155,15 @@ pub fn reload(
 ) -> Result<()> {
     // Determine the caddyfile path
     let import_path = import_path(deps)?;
-    deps.write_file(&import_path, &generate_caddyfile(deps, registry)?)
-        .with_context(|| format!("Failed to write Caddyfile at \"{}\"", import_path.display()))?;
+    deps.write_file(&import_path, &generate_caddyfile(deps, registry)?)?;
 
     // Read the existing caddyfile so that we can update it as necessary
     let caddyfile_path = PathBuf::from(deps.read_var("HOMEBREW_PREFIX")?)
         .join("etc")
         .join("Caddyfile");
-    let existing_caddyfile = deps.read_file(&caddyfile_path).with_context(|| {
-        format!(
-            "Failed to read Caddyfile at \"{}\"",
-            caddyfile_path.display()
-        )
-    })?;
+    let existing_caddyfile = deps.read_file(&caddyfile_path)?;
     if let Some(caddyfile_contents) = update_import(deps, existing_caddyfile)? {
-        deps.write_file(&caddyfile_path, &caddyfile_contents)
-            .with_context(|| {
-                format!(
-                    "Failed to write Caddyfile at \"{}\"",
-                    caddyfile_path.display()
-                )
-            })?;
+        deps.write_file(&caddyfile_path, &caddyfile_contents)?;
     }
 
     // Update the gallery file
@@ -183,13 +171,7 @@ pub fn reload(
     deps.write_file(
         &gallery_index_path,
         generate_gallery_index(registry).as_str(),
-    )
-    .with_context(|| {
-        format!(
-            "Failed to write gallery index file at \"{}\"",
-            gallery_index_path.display()
-        )
-    })?;
+    )?;
 
     // Reload the caddy config using the new Caddyfile
     let (status, _) = deps.exec(
@@ -198,17 +180,17 @@ pub fn reload(
             .arg(caddyfile_path),
         &mut (),
     )?;
-    if status.success() {
-        Ok(())
-    } else {
+    if !status.success() {
         bail!(
             "Failed to execute \"caddy reload\", failed with error code {}",
             match status.code() {
                 Some(code) => code.to_string(),
                 None => String::from("unknown"),
             }
-        )
+        );
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::dependencies::ChoosePort;
-use anyhow::{bail, Result};
+use crate::error::Result;
 use std::collections::HashSet;
 
 pub struct PortAllocator {
@@ -31,7 +31,7 @@ impl PortAllocator {
             })
             .or_else(|| deps.choose_port(&self.available_ports));
         let Some(port) = allocated_port else {
-            bail!("All available ports have been allocated already")
+            return Err(crate::error::ApplicationError::EmptyAllocator);
         };
         self.available_ports.remove(&port);
         Ok(port)

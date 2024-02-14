@@ -6,6 +6,7 @@ mod caddy;
 mod cli;
 mod config;
 mod dependencies;
+mod error;
 mod init;
 #[cfg(test)]
 mod mocks;
@@ -15,14 +16,16 @@ use crate::allocator::PortAllocator;
 use crate::caddy::{generate_caddyfile, reload};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
+use crate::error::Result;
 use crate::init::init_fish;
 use crate::registry::Registry;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::Context;
 use clap::{error::ErrorKind, Parser};
 use dependencies::{
     Args, CheckPath, ChoosePort, DataDir, Environment, Exec, ReadFile, WorkingDirectory, WriteFile,
 };
 use entrait::Impl;
+use error::ApplicationError;
 use registry::Project;
 use std::fmt::Write;
 use std::io::{stdout, IsTerminal};
@@ -36,7 +39,7 @@ fn active_project<'registry>(
 ) -> Result<(&'registry String, &'registry Project)> {
     registry
         .match_cwd(deps)?
-        .ok_or_else(|| anyhow!("No projects match the current directory"))
+        .ok_or(ApplicationError::NoActiveProject)
 }
 
 fn format_project(name: &str, project: &Project) -> String {
@@ -110,6 +113,31 @@ fn cleanup(
     registry.delete_many(removed_projects)
 }
 
+// Return the path to the config file and a flag indicating whether the location was customized with
+// the PORTMAN_CONFIG environment variable
+fn get_config_path(deps: &(impl DataDir + Environment)) -> Result<(PathBuf, bool)> {
+    let config_env = deps.read_var("PORTMAN_CONFIG").ok();
+    match config_env {
+        Some(config_path) => Ok((PathBuf::from(config_path), true)),
+        None => Ok((deps.get_data_dir()?.join("config.toml"), false)),
+    }
+}
+
+fn load_config(deps: &(impl ChoosePort + DataDir + Environment + ReadFile)) -> Result<Config> {
+    let (config_path, custom_path) = get_config_path(deps)?;
+    match Config::load(deps, &config_path)? {
+        Some(config) => Ok(config),
+        None if custom_path => Err(ApplicationError::MissingCustomConfig(config_path)),
+        None => Ok(Config::default()),
+    }
+}
+
+fn load_registry(deps: &(impl ChoosePort + DataDir + Environment + ReadFile)) -> Result<Registry> {
+    let config = load_config(deps)?;
+    let port_allocator = PortAllocator::new(config.get_valid_ports());
+    Registry::new(deps, port_allocator)
+}
+
 #[allow(clippy::too_many_lines)]
 fn run(
     deps: &(impl Args
@@ -122,21 +150,6 @@ fn run(
           + WriteFile
           + WorkingDirectory),
 ) -> Result<()> {
-    let data_dir = deps.get_data_dir()?;
-    let config_env = deps.read_var("PORTMAN_CONFIG").ok();
-    let config_env_present = config_env.is_some();
-    let config_path = match config_env {
-        Some(config_path) => PathBuf::from(config_path),
-        None => data_dir.join("config.toml"),
-    };
-    let config = Config::load(deps, &config_path)?.unwrap_or_else(|| {
-        if config_env_present {
-            eprintln!("Warning: config file doesn't exist. Using default config.");
-        }
-        Config::default()
-    });
-    let port_allocator = PortAllocator::new(config.get_valid_ports());
-
     let cli = Cli::try_parse_from(deps.get_args());
     // Ignore errors caused by passing --help and --version
     if let Err(err) = cli.as_ref() {
@@ -161,20 +174,21 @@ fn run(
 
         Cli::Config(subcommand) => match subcommand {
             ConfigSubcommand::Show => {
+                let config_path = get_config_path(deps)?.0;
+                let config = load_config(deps)?;
+                let registry_path = deps.get_data_dir()?.join(PathBuf::from("registry.toml"));
                 println!(
                     "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{config}",
                     config_path.display(),
-                    data_dir.join(PathBuf::from("registry.toml")).display()
+                    registry_path.display()
                 );
             }
             ConfigSubcommand::Edit => {
+                let config_path = get_config_path(deps)?.0;
                 let editor = deps.read_var("EDITOR")?;
                 println!("Opening \"{}\" with \"{editor}\"", config_path.display());
-                let (status, _) =
-                    deps.exec(std::process::Command::new(editor).arg(config_path), &mut ())?;
-                if !status.success() {
-                    bail!("Editor command failed to execute successfully");
-                }
+                deps.exec(std::process::Command::new(editor).arg(config_path), &mut ())
+                    .map_err(ApplicationError::EditorCommand)?;
             }
         },
 
@@ -182,12 +196,12 @@ fn run(
             project_name,
             extended,
         } => {
-            let registry = Registry::new(deps, port_allocator)?;
+            let registry = load_registry(deps)?;
             let (name, project) = match project_name {
                 Some(ref name) => registry
                     .get(name)
                     .map(|project| (name, project))
-                    .ok_or_else(|| anyhow!("Project {name} does not exist")),
+                    .ok_or_else(|| ApplicationError::NonExistentProject(name.clone())),
                 None => active_project(deps, &registry),
             }?;
             if extended {
@@ -216,7 +230,8 @@ fn run(
             no_activate,
             overwrite,
         } => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
+            let autogenerated_name = project_name.is_none();
             let (name, project) = create(
                 deps,
                 &mut registry,
@@ -224,7 +239,16 @@ fn run(
                 no_activate,
                 link,
                 overwrite,
-            )?;
+            )
+            .map_err(|err| {
+                if autogenerated_name {
+                    if let ApplicationError::InvalidProjectName(name, reason) = err {
+                        return ApplicationError::InvalidGeneratedProjectName(name, reason);
+                    }
+                }
+                err
+            })?;
+
             registry.save(deps)?;
             if stdout().is_terminal() {
                 println!("Created project {}", format_project(&name, &project));
@@ -238,7 +262,7 @@ fn run(
         }
 
         Cli::Delete { project_name } => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
             let project_name = match project_name {
                 Some(name) => name,
                 None => active_project(deps, &registry)?.0.clone(),
@@ -252,7 +276,7 @@ fn run(
         }
 
         Cli::Cleanup => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
             let deleted_projects = cleanup(deps, &mut registry)?;
             registry.save(deps)?;
             print!(
@@ -271,14 +295,14 @@ fn run(
         }
 
         Cli::Reset => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
             registry.delete_all();
             registry.save(deps)?;
             println!("Deleted all projects");
         }
 
         Cli::List => {
-            let registry = Registry::new(deps, port_allocator)?;
+            let registry = load_registry(deps)?;
             let output =
                 registry
                     .iter_projects()
@@ -291,7 +315,7 @@ fn run(
         }
 
         Cli::Link { port, project_name } => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
             let project_name = match project_name {
                 Some(name) => name,
                 None => active_project(deps, &registry)?.0.clone(),
@@ -302,7 +326,7 @@ fn run(
         }
 
         Cli::Unlink { port } => {
-            let mut registry = Registry::new(deps, port_allocator)?;
+            let mut registry = load_registry(deps)?;
             let unlinked_port = registry.unlink(port);
             registry.save(deps)?;
             match unlinked_port {
@@ -312,12 +336,12 @@ fn run(
         }
 
         Cli::Caddyfile => {
-            let registry = Registry::new(deps, port_allocator)?;
+            let registry = load_registry(deps)?;
             print!("{}", generate_caddyfile(deps, &registry)?);
         }
 
         Cli::ReloadCaddy => {
-            let registry = Registry::new(deps, port_allocator)?;
+            let registry = load_registry(deps)?;
             reload(deps, &registry)?;
             println!("Successfully reloaded caddy");
         }
@@ -328,10 +352,38 @@ fn run(
 
 fn main() {
     let deps = Impl::new(());
-    if let Err(err) = run(&deps) {
-        eprintln!("{err}");
-        process::exit(1);
-    }
+    let Err(err) = run(&deps) else { return };
+    eprintln!("{err}");
+
+    match err {
+        ApplicationError::DuplicateDirectory(name, _) => {
+            eprintln!("\nTry running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.");
+        }
+        ApplicationError::DuplicateProject(_) => {
+            eprintln!("\nTry providing the --overwrite flag to modify the existing project.");
+        }
+        ApplicationError::EditorCommand(_) => {
+            eprintln!("\nTry setting the $EDITOR environment variable to a valid command like vi or nano.");
+        }
+        ApplicationError::EmptyAllocator => {
+            eprintln!("\nTry running `portman config edit` to edit the config file and modify the `ranges` field to allow more ports.");
+        }
+        ApplicationError::InvalidConfig(_) => {
+            eprintln!("\nTry running `portman config edit` to edit the config file and correct the error.");
+        }
+        ApplicationError::InvalidGeneratedProjectName(_, _) => {
+            eprintln!("\nTry manually providing a project name.");
+        }
+        ApplicationError::MissingCustomConfig(path) => {
+            eprintln!("\nTry creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.", path.display());
+        }
+        ApplicationError::NoActiveProject => {
+            eprintln!("\nTry running the command again in a directory containing a project or providing an explicit project name.");
+        }
+        _ => {}
+    };
+
+    process::exit(1);
 }
 
 #[cfg(test)]
@@ -341,7 +393,7 @@ mod tests {
         args_mock, choose_port_mock, cwd_mock, data_dir_mock, exec_mock, get_mocked_registry,
         read_registry_mock, read_var_mock, write_file_mock,
     };
-    use std::os::unix::process::ExitStatusExt;
+    use anyhow::bail;
     use unimock::{matching, Clause, MockFn, Unimock};
 
     fn read_file_mock() -> impl Clause {
@@ -446,12 +498,7 @@ mod tests {
 
     #[test]
     fn test_cli_version() {
-        let mocked_deps = Unimock::new((
-            args_mock("portman --version"),
-            data_dir_mock(),
-            read_file_mock(),
-            read_var_mock(),
-        ));
+        let mocked_deps = Unimock::new(args_mock("portman --version"));
 
         let result = run(&mocked_deps);
         assert!(result.is_ok());
@@ -494,12 +541,7 @@ mod tests {
 
     #[test]
     fn test_cli_create_no_activate_no_name() {
-        let mocked_deps = Unimock::new((
-            args_mock("portman create --no-activate"),
-            data_dir_mock(),
-            read_file_mock(),
-            read_var_mock(),
-        ));
+        let mocked_deps = Unimock::new(args_mock("portman create --no-activate"));
 
         let result = run(&mocked_deps);
         assert!(result.is_err());
@@ -511,7 +553,6 @@ mod tests {
             args_mock("portman config edit"),
             data_dir_mock(),
             exec_mock(),
-            read_file_mock(),
             read_var_mock(),
         ));
 
@@ -523,7 +564,6 @@ mod tests {
         let mocked_deps = Unimock::new((
             args_mock("portman config edit"),
             data_dir_mock(),
-            read_file_mock(),
             dependencies::EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
                 .answers(|_| bail!("Failed"))
@@ -546,23 +586,6 @@ mod tests {
                 .each_call(matching!((command, _) if command.get_program() == "editor"))
                 .answers(|_| bail!("Failed"))
                 .n_times(1),
-            read_file_mock(),
-            read_var_mock(),
-        ));
-
-        assert!(run(&mocked_deps).is_err());
-    }
-
-    #[test]
-    fn test_edit_config_editor_command_fails() {
-        let mocked_deps = Unimock::new((
-            args_mock("portman config edit"),
-            data_dir_mock(),
-            dependencies::ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "editor"))
-                .answers(|_| Ok((ExitStatusExt::from_raw(1), String::new())))
-                .n_times(1),
-            read_file_mock(),
             read_var_mock(),
         ));
 

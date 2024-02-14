@@ -4,8 +4,9 @@ use crate::dependencies::{
     ArgsMock, ChoosePortMock, DataDirMock, EnvironmentMock, ExecMock, ReadFileMock,
     WorkingDirectoryMock, WriteFileMock,
 };
+use crate::error::Result;
 use crate::registry::Registry;
-use anyhow::{bail, Result};
+use anyhow::bail;
 use std::path::PathBuf;
 use unimock::{matching, Clause, MockFn, Unimock};
 
