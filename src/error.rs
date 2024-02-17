@@ -3,6 +3,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ApplicationError {
+    #[error("Error reloading caddy:\n\n{0:?}")]
+    Caddy(anyhow::Error),
+
     #[error("Project {0} already uses the directory \"{1}\"")]
     DuplicateDirectory(String, PathBuf),
 

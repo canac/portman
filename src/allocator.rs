@@ -1,7 +1,8 @@
 use crate::dependencies::ChoosePort;
-use crate::error::Result;
+use crate::error::{ApplicationError, Result};
 use std::collections::HashSet;
 
+#[cfg_attr(test, derive(Debug))]
 pub struct PortAllocator {
     available_ports: HashSet<u16>,
 }
@@ -31,7 +32,7 @@ impl PortAllocator {
             })
             .or_else(|| deps.choose_port(&self.available_ports));
         let Some(port) = allocated_port else {
-            return Err(crate::error::ApplicationError::EmptyAllocator);
+            return Err(ApplicationError::EmptyAllocator);
         };
         self.available_ports.remove(&port);
         Ok(port)
@@ -58,7 +59,10 @@ mod tests {
         let mocked_deps = Unimock::new(choose_port_mock());
         allocator.discard(3000);
         assert_eq!(allocator.allocate(&mocked_deps, None).unwrap(), 3001);
-        assert!(allocator.allocate(&mocked_deps, None).is_err());
+        assert!(matches!(
+            allocator.allocate(&mocked_deps, None),
+            Err(ApplicationError::EmptyAllocator),
+        ));
     }
 
     #[test]
@@ -67,7 +71,10 @@ mod tests {
         let mocked_deps = Unimock::new(choose_port_mock());
         assert!(allocator.allocate(&mocked_deps, None).is_ok());
         assert!(allocator.allocate(&mocked_deps, None).is_ok());
-        assert!(allocator.allocate(&mocked_deps, None).is_err());
+        assert!(matches!(
+            allocator.allocate(&mocked_deps, None),
+            Err(ApplicationError::EmptyAllocator),
+        ));
     }
 
     #[test]
@@ -77,6 +84,9 @@ mod tests {
         assert_eq!(allocator.allocate(&mocked_deps, Some(3001)).unwrap(), 3001);
         assert_eq!(allocator.allocate(&mocked_deps, Some(4000)).unwrap(), 3000);
         assert_eq!(allocator.allocate(&mocked_deps, None).unwrap(), 3002);
-        assert!(allocator.allocate(&mocked_deps, None).is_err());
+        assert!(matches!(
+            allocator.allocate(&mocked_deps, None),
+            Err(ApplicationError::EmptyAllocator),
+        ));
     }
 }

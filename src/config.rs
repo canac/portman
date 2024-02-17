@@ -1,10 +1,8 @@
 use crate::error::{ApplicationError, Result};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{Display, Formatter},
-    path::Path,
-};
+use std::fmt::{Display, Formatter};
+use std::path::Path;
 
 use crate::dependencies::ReadFile;
 
@@ -13,6 +11,7 @@ fn default_ranges() -> Vec<(u16, u16)> {
 }
 
 #[derive(Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug))]
 pub struct Config {
     #[serde(default = "default_ranges")]
     pub ranges: Vec<(u16, u16)>,
@@ -126,8 +125,8 @@ mod tests {
                 .n_times(1),
         );
 
-        let config = Config::load(&deps, &PathBuf::from("config.toml"));
-        assert!(config.is_err());
+        let err = Config::load(&deps, &PathBuf::from("config.toml")).unwrap_err();
+        assert!(matches!(err, ApplicationError::InvalidConfig(_)));
     }
 
     #[test]

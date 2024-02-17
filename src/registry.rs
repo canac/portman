@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Project {
     pub port: u16,
     pub directory: Option<PathBuf>,
@@ -20,6 +21,7 @@ pub struct RegistryData {
     pub projects: BTreeMap<String, Project>,
 }
 
+#[cfg_attr(test, derive(Debug))]
 pub struct Registry {
     store_path: PathBuf,
     projects: BTreeMap<String, Project>,
@@ -124,11 +126,7 @@ impl Registry {
             toml::to_string(&registry).context("Failed to serialize project registry")?;
         deps.write_file(&self.store_path, &registry_str)
             .context("Failed to save registry")?;
-        if let Err(err) = reload(deps, self) {
-            // An error reloading Caddy is just a warning, not a fatal error
-            eprintln!("Warning: couldn't reload Caddy config.\n\n{err}");
-        }
-        Ok(())
+        reload(deps, self).map_err(ApplicationError::Caddy)
     }
 
     // Get a project from the registry
@@ -381,7 +379,8 @@ pub mod tests {
         let config = Config::default();
         let mocked_deps = Unimock::new((data_dir_mock(), read_registry_mock(Some(";"))));
         let allocator = PortAllocator::new(config.get_valid_ports());
-        assert!(Registry::new(&mocked_deps, allocator).is_err());
+        let err = Registry::new(&mocked_deps, allocator).unwrap_err();
+        assert!(matches!(err, ApplicationError::Other(_)));
     }
 
     #[test]
@@ -392,7 +391,8 @@ pub mod tests {
             read_registry_mock(Some("projects.App1 = { port = 3001 }")),
         ));
         let allocator = PortAllocator::new(config.get_valid_ports());
-        assert!(Registry::new(&mocked_deps, allocator).is_err());
+        let err = Registry::new(&mocked_deps, allocator).unwrap_err();
+        assert!(matches!(err, ApplicationError::InvalidProjectName(name, _) if name == "App1"));
     }
 
     #[test]
@@ -497,7 +497,8 @@ linked_port = 3000",
         ));
         let mut registry = get_mocked_registry().unwrap();
         registry.dirty = true;
-        assert!(registry.save(&mocked_deps).is_ok());
+        let err = registry.save(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Caddy(_)));
     }
 
     #[test]
@@ -515,7 +516,8 @@ linked_port = 3000",
         ));
         let mut registry = get_mocked_registry().unwrap();
         registry.dirty = true;
-        assert!(registry.save(&mocked_deps).is_ok());
+        let err = registry.save(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Caddy(_)));
     }
 
     #[test]
@@ -537,7 +539,8 @@ linked_port = 3000",
         ));
         let mut registry = get_mocked_registry().unwrap();
         registry.dirty = true;
-        assert!(registry.save(&mocked_deps).is_ok());
+        let err = registry.save(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Caddy(_)));
     }
 
     #[test]
@@ -554,7 +557,8 @@ linked_port = 3000",
         ));
         let mut registry = get_mocked_registry().unwrap();
         registry.dirty = true;
-        assert!(registry.save(&mocked_deps).is_ok());
+        let err = registry.save(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Caddy(_)));
     }
 
     #[test]
@@ -577,7 +581,10 @@ linked_port = 3000",
     fn test_create_invalid_name() {
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.create(&mocked_deps, "App3", None, None).is_err());
+        let err = registry
+            .create(&mocked_deps, "App3", None, None)
+            .unwrap_err();
+        assert!(matches!(err, ApplicationError::InvalidProjectName(_, _)));
         assert!(!registry.dirty);
     }
 
@@ -585,7 +592,10 @@ linked_port = 3000",
     fn test_create_duplicate_name() {
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.create(&mocked_deps, "app3", None, None).is_err());
+        let err = registry
+            .create(&mocked_deps, "app3", None, None)
+            .unwrap_err();
+        assert!(matches!(err, ApplicationError::DuplicateProject(_)));
         assert!(!registry.dirty);
     }
 
@@ -615,14 +625,16 @@ linked_port = 3000",
     fn test_create_duplicate_directory() {
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry
-            .create(
-                &mocked_deps,
-                "app4",
-                Some(PathBuf::from("/projects/app3")),
-                None,
-            )
-            .is_err());
+        let result = registry.create(
+            &mocked_deps,
+            "app4",
+            Some(PathBuf::from("/projects/app3")),
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(ApplicationError::DuplicateDirectory(_, _)),
+        ));
         assert!(!registry.dirty);
     }
 
@@ -667,7 +679,8 @@ linked_port = 3000",
     #[test]
     fn test_update_nonexistent() {
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.update("app4", None).is_err());
+        let err = registry.update("app4", None).unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentProject(_)));
     }
 
     #[test]
@@ -680,7 +693,8 @@ linked_port = 3000",
     #[test]
     fn test_delete_nonexistent() {
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.delete("app4").is_err());
+        let err = registry.delete("app4").unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentProject(_)));
     }
 
     #[test]
@@ -754,7 +768,8 @@ linked_port = 3000",
     fn test_link_nonexistent() {
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.link(&mocked_deps, "app4", 3004).is_err());
+        let err = registry.link(&mocked_deps, "app4", 3004).unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentProject(_)));
         assert!(!registry.dirty);
     }
 
@@ -814,13 +829,34 @@ linked_port = 3000",
 
     #[test]
     fn test_validate_name() {
-        assert!(Registry::validate_name("").is_err());
-        assert!(Registry::validate_name(&"a".repeat(64)).is_err());
-        assert!(Registry::validate_name("-a").is_err());
-        assert!(Registry::validate_name("a-").is_err());
-        assert!(Registry::validate_name("a--b").is_err());
-        assert!(Registry::validate_name("a_b").is_err());
-        assert!(Registry::validate_name("A-B").is_err());
+        assert!(matches!(
+            Registry::validate_name("").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must not be empty",
+        ));
+        assert!(matches!(
+            Registry::validate_name(&"a".repeat(64)).unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must not exceed 63 characters",
+        ));
+        assert!(matches!(
+            Registry::validate_name("-a").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must not start or end with a dash",
+        ));
+        assert!(matches!(
+            Registry::validate_name("a-").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must not start or end with a dash",
+        ));
+        assert!(matches!(
+            Registry::validate_name("a--b").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must not contain consecutive dashes",
+        ));
+        assert!(matches!(
+            Registry::validate_name("a_b").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must only contain lowercase alphanumeric characters and dashes",
+        ));
+        assert!(matches!(
+            Registry::validate_name("A-B").unwrap_err(),
+            ApplicationError::InvalidProjectName(_, reason) if reason == "must only contain lowercase alphanumeric characters and dashes",
+        ));
         assert!(Registry::validate_name("a").is_ok());
         assert!(Registry::validate_name("a-0").is_ok());
     }

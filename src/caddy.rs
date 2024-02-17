@@ -174,15 +174,16 @@ pub fn reload(
     )?;
 
     // Reload the caddy config using the new Caddyfile
-    let (status, _) = deps.exec(
+    let (status, output) = deps.exec(
         std::process::Command::new("caddy")
             .args(["reload", "--adapter", "caddyfile", "--config"])
-            .arg(caddyfile_path),
+            .arg(caddyfile_path.clone()),
         &mut (),
     )?;
     if !status.success() {
         bail!(
-            "Failed to execute \"caddy reload\", failed with error code {}",
+            "Failed to execute \"caddy reload --adapter caddyfile --config {}\", failed with error code {} and output:\n{output}",
+            caddyfile_path.display(),
             match status.code() {
                 Some(code) => code.to_string(),
                 None => String::from("unknown"),

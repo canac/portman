@@ -1,13 +1,10 @@
 use anyhow::{Context, Result};
 use entrait::entrait;
 use rand::prelude::*;
-use std::{
-    collections::HashSet,
-    ffi::OsString,
-    path::{Path, PathBuf},
-    process::{Command, ExitStatus},
-    str::from_utf8,
-};
+use std::collections::HashSet;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
 
 #[entrait(pub Args, mock_api=ArgsMock)]
 fn get_args(_deps: &impl std::any::Any) -> Vec<String> {
@@ -47,22 +44,17 @@ fn exec(
     command: &mut Command,
     _: &mut (),
 ) -> Result<(ExitStatus, String)> {
-    let output = command.output().with_context(|| {
-        format!(
-            "Failed to run command \"{}\"",
-            command.get_program().to_string_lossy()
-        )
-    })?;
+    let output = command
+        .output()
+        .with_context(|| format!("Failed to run command \"{command:?}\""))?;
     let status = output.status;
-    let stdout = from_utf8(&output.stdout)
-        .with_context(|| {
-            format!(
-                "Failed to read output from command \"{}\"",
-                command.get_program().to_string_lossy()
-            )
-        })?
-        .to_string();
-    Ok((status, stdout))
+    let output = String::from_utf8_lossy(if status.success() {
+        &output.stdout
+    } else {
+        &output.stderr
+    })
+    .into();
+    Ok((status, output))
 }
 
 #[entrait(pub ReadFile, mock_api=ReadFileMock)]

@@ -353,9 +353,16 @@ fn run(
 fn main() {
     let deps = Impl::new(());
     let Err(err) = run(&deps) else { return };
+    if let ApplicationError::Clap(clap_err) = err {
+        clap_err.print().unwrap();
+        return;
+    }
     eprintln!("{err}");
 
     match err {
+        ApplicationError::Caddy(_) => {
+            eprintln!("\nTry running `brew install caddy`");
+        }
         ApplicationError::DuplicateDirectory(name, _) => {
             eprintln!("\nTry running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.");
         }
@@ -543,8 +550,8 @@ mod tests {
     fn test_cli_create_no_activate_no_name() {
         let mocked_deps = Unimock::new(args_mock("portman create --no-activate"));
 
-        let result = run(&mocked_deps);
-        assert!(result.is_err());
+        let err = run(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Clap(_)));
     }
 
     #[test]
@@ -574,7 +581,8 @@ mod tests {
                 .n_times(1),
         ));
 
-        assert!(run(&mocked_deps).is_err());
+        let err = run(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::Other(_)));
     }
 
     #[test]
@@ -589,6 +597,7 @@ mod tests {
             read_var_mock(),
         ));
 
-        assert!(run(&mocked_deps).is_err());
+        let err = run(&mocked_deps).unwrap_err();
+        assert!(matches!(err, ApplicationError::EditorCommand(_)));
     }
 }
