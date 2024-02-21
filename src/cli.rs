@@ -1,11 +1,13 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(ValueEnum, Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub enum InitShell {
     Fish,
 }
 
 #[derive(Subcommand)]
+#[cfg_attr(test, derive(Debug))]
 pub enum Config {
     /// Display the current configuration
     Show,
@@ -15,6 +17,7 @@ pub enum Config {
 }
 
 #[derive(Parser)]
+#[cfg_attr(test, derive(Debug))]
 #[clap(about, version, author)]
 pub enum Cli {
     /// Print the shell configuration command to initialize portman
