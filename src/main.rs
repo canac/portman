@@ -150,11 +150,12 @@ fn run(
           + WriteFile
           + WorkingDirectory),
     cli: Cli,
-) -> Result<()> {
+) -> Result<String> {
+    let mut output = String::new();
     match cli {
         Cli::Init { shell } => match shell {
             InitShell::Fish => {
-                println!("{}", init_fish());
+                writeln!(output, "{}", init_fish()).unwrap();
             }
         },
 
@@ -163,16 +164,23 @@ fn run(
                 let config_path = get_config_path(deps)?.0;
                 let config = load_config(deps)?;
                 let registry_path = deps.get_data_dir()?.join(PathBuf::from("registry.toml"));
-                println!(
+                writeln!(
+                    output,
                     "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{config}",
                     config_path.display(),
                     registry_path.display()
-                );
+                )
+                .unwrap();
             }
             ConfigSubcommand::Edit => {
                 let config_path = get_config_path(deps)?.0;
                 let editor = deps.read_var("EDITOR")?;
-                println!("Opening \"{}\" with \"{editor}\"", config_path.display());
+                writeln!(
+                    output,
+                    "Opening \"{}\" with \"{editor}\"",
+                    config_path.display()
+                )
+                .unwrap();
                 deps.exec(std::process::Command::new(editor).arg(config_path), &mut ())
                     .map_err(ApplicationError::EditorCommand)?;
             }
@@ -201,12 +209,17 @@ fn run(
                     .map(|port| port.to_string())
                     .unwrap_or_default();
                 if stdout().is_terminal() {
-                    print!("port: {}\nname: {name}\ndirectory: {directory}\nlinked port: {linked_port}\n", project.port);
+                    write!(output, "port: {}\nname: {name}\ndirectory: {directory}\nlinked port: {linked_port}\n", project.port).unwrap();
                 } else {
-                    print!("{}\n{name}\n{directory}\n{linked_port}\n", project.port);
+                    write!(
+                        output,
+                        "{}\n{name}\n{directory}\n{linked_port}\n",
+                        project.port
+                    )
+                    .unwrap();
                 }
             } else {
-                println!("{}", project.port);
+                writeln!(output, "{}", project.port).unwrap();
             }
         }
 
@@ -228,14 +241,16 @@ fn run(
 
             registry.save(deps)?;
             if stdout().is_terminal() {
-                println!(
+                writeln!(
+                    output,
                     "{} project {}",
                     if updated { "Updated" } else { "Created" },
                     format_project(&name, &project)
-                );
+                )
+                .unwrap();
             } else {
                 // Only print the port if stdout isn't a TTY for easier scripting
-                println!("{}", project.port);
+                writeln!(output, "{}", project.port).unwrap();
             }
         }
 
@@ -247,49 +262,45 @@ fn run(
             };
             let project = registry.delete(&project_name)?;
             registry.save(deps)?;
-            println!(
+            writeln!(
+                output,
                 "Deleted project {}",
                 format_project(&project_name, &project),
-            );
+            )
+            .unwrap();
         }
 
         Cli::Cleanup => {
             let mut registry = load_registry(deps)?;
             let deleted_projects = cleanup(deps, &mut registry)?;
             registry.save(deps)?;
-            print!(
-                "Deleted {}\n{}",
+            writeln!(
+                output,
+                "Deleted {}",
                 match deleted_projects.len() {
                     1 => String::from("1 project"),
                     count => format!("{count} projects"),
-                },
-                deleted_projects
-                    .iter()
-                    .fold(String::new(), |mut output, (name, project)| {
-                        let _ = writeln!(output, "{}", format_project(name, project));
-                        output
-                    })
-            );
+                }
+            )
+            .unwrap();
+            for (name, project) in deleted_projects {
+                writeln!(output, "{}", format_project(&name, &project)).unwrap();
+            }
         }
 
         Cli::Reset => {
             let mut registry = load_registry(deps)?;
             registry.delete_all();
             registry.save(deps)?;
-            println!("Deleted all projects");
+            writeln!(output, "Deleted all projects").unwrap();
         }
 
         Cli::List => {
             let registry = load_registry(deps)?;
-            let output =
-                registry
-                    .iter_projects()
-                    .fold(String::new(), |mut output, (name, project)| {
-                        let _ = writeln!(output, "{}", format_project(name, project));
-                        output
-                    });
             registry.save(deps)?;
-            print!("{output}");
+            for (name, project) in registry.iter_projects() {
+                writeln!(output, "{}", format_project(name, project)).unwrap();
+            }
         }
 
         Cli::Link { port, project_name } => {
@@ -300,7 +311,7 @@ fn run(
             };
             registry.link(deps, &project_name, port)?;
             registry.save(deps)?;
-            println!("Linked port {port} to project {project_name}");
+            writeln!(output, "Linked port {port} to project {project_name}").unwrap();
         }
 
         Cli::Unlink { port } => {
@@ -308,24 +319,26 @@ fn run(
             let unlinked_port = registry.unlink(port);
             registry.save(deps)?;
             match unlinked_port {
-                Some(project_name) => println!("Unlinked port {port} from project {project_name}"),
-                None => println!("Port {port} was not linked to a project"),
+                Some(project_name) => {
+                    writeln!(output, "Unlinked port {port} from project {project_name}").unwrap();
+                }
+                None => writeln!(output, "Port {port} was not linked to a project").unwrap(),
             };
         }
 
         Cli::Caddyfile => {
             let registry = load_registry(deps)?;
-            print!("{}", generate_caddyfile(deps, &registry)?);
+            write!(output, "{}", generate_caddyfile(deps, &registry)?).unwrap();
         }
 
         Cli::ReloadCaddy => {
             let registry = load_registry(deps)?;
             reload(deps, &registry)?;
-            println!("Successfully reloaded caddy");
+            writeln!(output, "Successfully reloaded caddy").unwrap();
         }
-    }
+    };
 
-    Ok(())
+    Ok(output)
 }
 
 fn main() {
@@ -341,7 +354,13 @@ fn main() {
         None
     };
 
-    let Err(err) = run(&deps, cli) else { return };
+    let err = match run(&deps, cli) {
+        Err(err) => err,
+        Ok(output) => {
+            print!("{output}");
+            return;
+        }
+    };
     eprintln!("{err}");
 
     match err {
@@ -515,8 +534,11 @@ mod tests {
         ));
         let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let result = run(&mocked_deps, cli);
-        assert!(result.is_ok());
+        let output = run(&mocked_deps, cli).unwrap();
+        assert_eq!(
+            output,
+            "Created project project :3004 (/projects/project)\n"
+        );
     }
 
     #[test]
@@ -533,8 +555,8 @@ mod tests {
         ));
         let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let result = run(&mocked_deps, cli);
-        assert!(result.is_ok());
+        let output = run(&mocked_deps, cli).unwrap();
+        assert_eq!(output, "Created project project :3004\n");
     }
 
     #[test]
@@ -555,7 +577,8 @@ mod tests {
         ));
         let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        assert!(run(&mocked_deps, cli).is_ok());
+        let output = run(&mocked_deps, cli).unwrap();
+        assert_eq!(output, "Opening \"/data/config.toml\" with \"editor\"\n");
     }
 
     #[test]
