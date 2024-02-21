@@ -1,7 +1,7 @@
 // Return the fish shell initialization command
 pub fn init_fish() -> &'static str {
-    "function __portman_activate
-    if set lines (portman get --extended 2> /dev/null)
+    "function __portman_sync_env
+    if set lines (command portman get --extended 2> /dev/null)
         set -gx PORT $lines[1]
         set -gx PORTMAN_PROJECT $lines[2]
         if test -n $lines[4]
@@ -14,10 +14,17 @@ pub fn init_fish() -> &'static str {
     end
 end
 
+function portman --wrap portman
+    command portman $argv
+    set portman_status $status
+    __portman_sync_env
+    return $portman_status
+end
+
 function __portman_prompt_hook --on-event fish_prompt
-    __portman_activate
+    __portman_sync_env
     function __portman_cd_hook --on-variable PWD
-        __portman_activate
+        __portman_sync_env
     end
 end
 
