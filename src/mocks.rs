@@ -42,12 +42,7 @@ pub fn data_dir_mock() -> impl Clause {
 pub fn exec_mock() -> impl Clause {
     ExecMock
             .each_call(matching!((command, _) if command.get_program() == "caddy" || command.get_program() == "editor"))
-            .answers(|_| {
-                Ok((
-                    std::os::unix::process::ExitStatusExt::from_raw(0),
-                    String::new(),
-                ))
-            })
+            .answers(|_| Ok(String::new()))
             .at_least_times(1)
 }
 

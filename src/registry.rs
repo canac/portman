@@ -364,7 +364,6 @@ pub mod tests {
         read_var_mock, write_file_mock,
     };
     use anyhow::bail;
-    use std::os::unix::process::ExitStatusExt;
     use unimock::{matching, Clause, MockFn, Unimock};
 
     fn read_caddyfile_mock() -> impl Clause {
@@ -549,7 +548,7 @@ linked_port = 3000",
             data_dir_mock(),
             dependencies::ExecMock
                 .each_call(matching!((command, _) if command.get_program() == "caddy"))
-                .answers(|_| Ok((ExitStatusExt::from_raw(1), String::new())))
+                .answers(|_| bail!("Error executing"))
                 .n_times(1),
             read_caddyfile_mock(),
             read_var_mock(),

@@ -1,6 +1,6 @@
 use crate::dependencies::{DataDir, Environment, Exec, ReadFile, WriteFile};
 use crate::registry::Registry;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::fmt::Write;
 use std::path::PathBuf;
 
@@ -174,22 +174,12 @@ pub fn reload(
     )?;
 
     // Reload the caddy config using the new Caddyfile
-    let (status, output) = deps.exec(
+    deps.exec(
         std::process::Command::new("caddy")
             .args(["reload", "--adapter", "caddyfile", "--config"])
             .arg(caddyfile_path.clone()),
         &mut (),
     )?;
-    if !status.success() {
-        bail!(
-            "Failed to execute \"caddy reload --adapter caddyfile --config {}\", failed with error code {} and output:\n{output}",
-            caddyfile_path.display(),
-            match status.code() {
-                Some(code) => code.to_string(),
-                None => String::from("unknown"),
-            }
-        );
-    }
 
     Ok(())
 }

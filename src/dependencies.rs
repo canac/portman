@@ -1,10 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use entrait::entrait;
 use rand::prelude::*;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
+use std::process::Command;
 
 #[entrait(pub Args, mock_api=ArgsMock)]
 fn get_args(_deps: &impl std::any::Any) -> Vec<String> {
@@ -39,22 +39,20 @@ pub fn read_var(_deps: &impl std::any::Any, var: &str) -> Result<String> {
 // The second unused arg is a workaround so that we can match against command in mocks
 // https://github.com/audunhalland/unimock/issues/40
 #[entrait(pub Exec, mock_api=ExecMock)]
-fn exec(
-    _deps: &impl std::any::Any,
-    command: &mut Command,
-    _: &mut (),
-) -> Result<(ExitStatus, String)> {
+fn exec(_deps: &impl std::any::Any, command: &mut Command, _: &mut ()) -> Result<String> {
     let output = command
         .output()
         .with_context(|| format!("Failed to run command \"{command:?}\""))?;
     let status = output.status;
-    let output = String::from_utf8_lossy(if status.success() {
-        &output.stdout
-    } else {
-        &output.stderr
-    })
-    .into();
-    Ok((status, output))
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into());
+    }
+    let exit_code = match status.code() {
+        Some(code) => code.to_string(),
+        None => String::from("unknown"),
+    };
+    let output = String::from_utf8_lossy(&output.stderr);
+    bail!("Command \"{command:?}\" failed with exit code {exit_code} and output:\n{output}");
 }
 
 #[entrait(pub ReadFile, mock_api=ReadFileMock)]
