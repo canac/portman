@@ -68,9 +68,6 @@ pub enum Cli {
     /// Cleanup projects whose directory has been deleted
     Cleanup,
 
-    /// Delete all existing projects
-    Reset,
-
     /// List all projects
     List,
 

@@ -288,13 +288,6 @@ fn run(
             }
         }
 
-        Cli::Reset => {
-            let mut registry = load_registry(deps)?;
-            registry.delete_all();
-            registry.save(deps)?;
-            writeln!(output, "Deleted all projects").unwrap();
-        }
-
         Cli::List => {
             let registry = load_registry(deps)?;
             registry.save(deps)?;

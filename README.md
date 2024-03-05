@@ -208,10 +208,6 @@ Deletes a project. `project-name` defaults to the active project. Its autogenera
 
 Deletes all projects whose directories don't exist anymore.
 
-### `portman reset`
-
-Deletes all projects.
-
 ### `portman list`
 
 Lists each project in alphabetical order with its ports, directory, and linked port.

@@ -219,12 +219,6 @@ impl Registry {
         Ok(deleted_projects)
     }
 
-    // Delete all projects
-    pub fn delete_all(&mut self) {
-        self.projects = BTreeMap::new();
-        self.dirty = true;
-    }
-
     // Iterate over all projects with their names
     pub fn iter_projects(&self) -> impl Iterator<Item = (&String, &Project)> {
         self.projects.iter()
@@ -717,14 +711,6 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.delete_many(vec![]).unwrap().is_empty());
         assert!(!registry.dirty);
-    }
-
-    #[test]
-    fn test_delete_all() {
-        let mut registry = get_mocked_registry().unwrap();
-        registry.delete_all();
-        assert!(registry.projects.is_empty());
-        assert!(registry.dirty);
     }
 
     #[test]
