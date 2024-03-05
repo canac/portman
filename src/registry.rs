@@ -19,12 +19,15 @@ pub struct Project {
 #[derive(Clone, Default, Deserialize, Serialize)]
 pub struct RegistryData {
     pub projects: BTreeMap<String, Project>,
+    #[serde(default)]
+    pub repos: BTreeMap<String, u16>,
 }
 
 #[cfg_attr(test, derive(Debug))]
 pub struct Registry {
     store_path: PathBuf,
     projects: BTreeMap<String, Project>,
+    repos: BTreeMap<String, u16>,
     allocator: PortAllocator,
     dirty: bool,
 }
@@ -61,6 +64,20 @@ impl Registry {
 
         let mut dirty = false;
         let mut directories: HashSet<PathBuf> = HashSet::new();
+        let mut repo_ports: HashSet<u16> = HashSet::new();
+
+        // Remove duplicate repos
+        let repos = registry_data
+            .repos
+            .into_iter()
+            .filter(|(_, port)| {
+                let new_port = repo_ports.insert(*port);
+                if !new_port {
+                    dirty = true;
+                }
+                new_port
+            })
+            .collect();
 
         // Validate all ports in the registry against the config and regenerate
         // invalid ones as necessary
@@ -104,6 +121,7 @@ impl Registry {
         let registry = Self {
             store_path,
             projects,
+            repos,
             allocator,
             dirty,
         };
@@ -121,6 +139,7 @@ impl Registry {
 
         let registry = RegistryData {
             projects: self.projects.clone(),
+            repos: self.repos.clone(),
         };
         let registry_str =
             toml::to_string(&registry).context("Failed to serialize project registry")?;
@@ -161,8 +180,12 @@ impl Registry {
             }
         }
 
+        if let Some(port) = linked_port {
+            self.allocator.discard(port);
+        }
+
         let port = self.allocator.allocate(deps, None)?;
-        let new_project = Project {
+        let mut new_project = Project {
             port,
             directory,
             linked_port: None,
@@ -171,6 +194,7 @@ impl Registry {
 
         if let Some(port) = linked_port {
             self.link(deps, name, port)?;
+            new_project.linked_port = Some(port);
         }
 
         self.dirty = true;
@@ -217,12 +241,6 @@ impl Registry {
             self.dirty = true;
         }
         Ok(deleted_projects)
-    }
-
-    // Delete all projects
-    pub fn delete_all(&mut self) {
-        self.projects = BTreeMap::new();
-        self.dirty = true;
     }
 
     // Iterate over all projects with their names
@@ -275,6 +293,21 @@ impl Registry {
             }
         }
         None
+    }
+
+    // Get the port associated with a repo
+    pub fn get_repo_port(&mut self, repo: &str) -> Result<u16> {
+        self.repos
+            .get(repo)
+            .copied()
+            .ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_string()))
+    }
+
+    // Get the port associated with a repo
+    pub fn set_repo_port(&mut self, repo: String, port: u16) {
+        if self.repos.insert(repo, port) != Some(port) {
+            self.dirty = true;
+        }
     }
 
     // Find and return the project that matches the current working directory, if any
@@ -374,6 +407,17 @@ pub mod tests {
     }
 
     #[test]
+    fn test_load() {
+        let config = Config::default();
+        let mocked_deps = Unimock::new((data_dir_mock(), read_registry_mock(None)));
+        let allocator = PortAllocator::new(config.get_valid_ports());
+        let registry = Registry::new(&mocked_deps, allocator).unwrap();
+        assert_eq!(registry.projects.len(), 3);
+        assert_eq!(registry.repos.len(), 1);
+        assert!(!registry.dirty);
+    }
+
+    #[test]
     fn test_load_invalid() {
         let config = Config::default();
         let mocked_deps = Unimock::new((data_dir_mock(), read_registry_mock(Some(";"))));
@@ -392,6 +436,25 @@ pub mod tests {
         let allocator = PortAllocator::new(config.get_valid_ports());
         let err = Registry::new(&mocked_deps, allocator).unwrap_err();
         assert!(matches!(err, ApplicationError::InvalidProjectName(name, _) if name == "App1"));
+    }
+
+    #[test]
+    fn test_load_duplicate_repo() {
+        let config = Config::default();
+        let mocked_deps = Unimock::new((
+            data_dir_mock(),
+            read_registry_mock(Some(
+                "[projects]
+
+[repos]
+'https://github.com/user/app2.git' = 3000
+'https://github.com/user/app3.git' = 3000",
+            )),
+        ));
+        let allocator = PortAllocator::new(config.get_valid_ports());
+        let registry = Registry::new(&mocked_deps, allocator).unwrap();
+        assert_eq!(registry.repos.len(), 1);
+        assert!(registry.dirty);
     }
 
     #[test]
@@ -621,6 +684,18 @@ linked_port = 3000",
     }
 
     #[test]
+    fn test_create_linked_port_discards_current() {
+        let mocked_deps = Unimock::new(choose_port_mock());
+        let mut registry = get_mocked_registry().unwrap();
+        let project = registry
+            .create(&mocked_deps, "app4", None, Some(3004))
+            .unwrap();
+        assert_eq!(project.port, 3005);
+        assert_eq!(registry.get("app4").unwrap().port, 3005);
+        assert!(registry.dirty);
+    }
+
+    #[test]
     fn test_create_duplicate_directory() {
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
@@ -717,14 +792,6 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.delete_many(vec![]).unwrap().is_empty());
         assert!(!registry.dirty);
-    }
-
-    #[test]
-    fn test_delete_all() {
-        let mut registry = get_mocked_registry().unwrap();
-        registry.delete_all();
-        assert!(registry.projects.is_empty());
-        assert!(registry.dirty);
     }
 
     #[test]

@@ -46,13 +46,13 @@ pub enum Cli {
         /// The name of the project (defaults to the basename of the current directory unless --no-activate is present)
         project_name: Option<String>,
 
-        /// Link the project to a port
-        #[clap(long, value_name = "PORT")]
-        link: Option<u16>,
-
         /// Do not automatically activate this project
         #[clap(long, short = 'A', requires("project_name"))]
         no_activate: bool,
+
+        /// Do not automatically link this project to a port based on its repo
+        #[clap(long, short = 'N', conflicts_with("no_activate"))]
+        no_link: bool,
 
         /// Modify the project if it already exists instead of failing
         #[clap(long, short = 'o')]
@@ -68,19 +68,20 @@ pub enum Cli {
     /// Cleanup projects whose directory has been deleted
     Cleanup,
 
-    /// Delete all existing projects
-    Reset,
-
     /// List all projects
     List,
 
     /// Link a project to a port
     Link {
-        /// The port to link
-        port: u16,
+        /// The port to link (defaults to the port assigned to the active project's repo)
+        port: Option<u16>,
 
         /// The name of the project to link (defaults to the active project)
         project_name: Option<String>,
+
+        /// Do not remember which port the active project's repo was assigned to
+        #[clap(long, short = 'S', requires("port"), conflicts_with("project_name"))]
+        no_save: bool,
     },
 
     /// Unlink a port from a project

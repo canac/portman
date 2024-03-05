@@ -41,15 +41,21 @@ pub fn data_dir_mock() -> impl Clause {
 
 pub fn exec_mock() -> impl Clause {
     ExecMock
-            .each_call(matching!((command, _) if command.get_program() == "caddy" || command.get_program() == "editor"))
-            .answers(|_| Ok(String::new()))
-            .at_least_times(1)
+        .each_call(matching!((command, _) if command.get_program() == "caddy" || command.get_program() == "editor"))
+        .answers(|_| Ok(String::new()))
+        .at_least_times(1)
+}
+
+pub fn exec_git_mock(project: &str) -> impl Clause {
+    let repo = format!("https://github.com/user/{project}.git\n");
+    ExecMock
+        .each_call(matching!((command, _) if command.get_program() == "git"))
+        .answers(move |_| Ok(repo.clone()))
+        .at_least_times(1)
 }
 
 pub fn read_registry_mock(contents: Option<&str>) -> impl Clause {
-    const REGISTRY: &str = "
-[projects]
-
+    const REGISTRY: &str = r#"
 [projects.app1]
 port = 3001
 
@@ -59,8 +65,11 @@ linked_port = 3000
 
 [projects.app3]
 port = 3003
-directory = '/projects/app3'
-";
+directory = "/projects/app3"
+
+[repos]
+"https://github.com/user/app3.git" = 3004
+"#;
 
     let result = String::from(contents.unwrap_or(REGISTRY));
     ReadFileMock
@@ -83,6 +92,20 @@ pub fn read_var_mock() -> impl Clause {
 pub fn write_file_mock() -> impl Clause {
     WriteFileMock
         .each_call(matching!(_))
+        .answers(|_| Ok(()))
+        .at_least_times(1)
+}
+
+pub fn write_caddyfile_mock() -> impl Clause {
+    WriteFileMock
+        .each_call(matching!((path, _) if path == &PathBuf::from("/homebrew/etc/Caddyfile") || path == &PathBuf::from("/data/Caddyfile") || path == &PathBuf::from("/data/gallery_www/index.html")))
+        .answers(|_| Ok(()))
+        .at_least_times(1)
+}
+
+pub fn write_registry_mock(expected_contents: &'static str) -> impl Clause {
+    WriteFileMock
+        .each_call(matching!((path, contents) if path == &PathBuf::from("/data/registry.toml") && contents == &expected_contents.to_string()))
         .answers(|_| Ok(()))
         .at_least_times(1)
 }

@@ -42,8 +42,7 @@ fn generate_gallery_index(registry: &Registry) -> String {
             output
         });
     format!(
-        r#"
-<!DOCTYPE html>
+        r#"<!DOCTYPE html>
 <html lang="en">
   <head>
     <style>
@@ -191,36 +190,13 @@ mod tests {
     use super::*;
     use crate::mocks::{data_dir_mock, get_mocked_registry};
 
-    const GOLDEN_CADDYFILE: &str = "localhost {
-	file_server {
-		root \"/data/gallery_www\"
-	}
-}
-
-app1.localhost {
-\treverse_proxy localhost:3001
-}
-
-app2.localhost {
-\treverse_proxy localhost:3002
-}
-
-http://localhost:3000 {
-\treverse_proxy localhost:3002
-}
-
-app3.localhost {
-\treverse_proxy localhost:3003
-}
-";
-
     #[test]
     fn test_caddyfile() {
         let registry = get_mocked_registry().unwrap();
         let deps = Unimock::new(data_dir_mock());
         assert_eq!(
             generate_caddyfile(&deps, &registry).unwrap(),
-            GOLDEN_CADDYFILE
+            include_str!("snapshots/Caddyfile")
         );
     }
 
@@ -258,9 +234,9 @@ app3.localhost {
     #[test]
     fn test_generate_gallery() {
         let registry = get_mocked_registry().unwrap();
-        let gallery = generate_gallery_index(&registry);
-        assert!(gallery.contains("portman projects (3)"));
-        assert!(gallery.contains("href=\"https://app1.localhost\""));
-        assert!(gallery.contains("<p class=\"monospace\">\"/projects/app3\"</p>"));
+        assert_eq!(
+            generate_gallery_index(&registry),
+            include_str!("snapshots/gallery.html")
+        );
     }
 }

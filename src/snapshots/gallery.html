@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <style>
+      .container {
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .container h1 {
+        text-align: center;
+        margin-bottom: 1em;
+      }
+
+      .gallery {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 2em;
+        margin: auto 3em;
+        display: flex;
+      }
+
+      .project {
+        width: 22em;
+        color: #222;
+        background-color: #eee;
+        border-radius: 1.5em;
+        padding: 1em 2em;
+        text-decoration: none;
+        overflow: scroll;
+      }
+
+      .project:hover {
+        background-color: #ddd;
+      }
+
+      .project:active {
+        background-color: #ccc;
+      }
+
+      .project h1 {
+        text-align: center;
+        border-bottom: 1px solid #444;
+        padding-bottom: 0.5em;
+      }
+
+      .monospace {
+        font-family: Courier New, Courier, monospace;
+        font-size: 0.8em;
+      }
+    </style>
+    <meta charset="utf-8" />
+    <title>portman Localhost Projects</title>
+  </head>
+  <body>
+    <div class="container">
+      <h1>portman projects (3)</h1>
+      <div class="gallery">
+        <a class="project" href="https://app1.localhost">
+          <h2>app1</h2>
+          <p>Port: <strong>3001</strong></p>
+        </a>
+        <a class="project" href="https://app2.localhost">
+          <h2>app2</h2>
+          <p>Port: <strong>3002</strong></p>
+        </a>
+        <a class="project" href="https://app3.localhost">
+          <h2>app3</h2>
+          <p>Port: <strong>3003</strong></p>
+          <p class="monospace">"/projects/app3"</p>
+        </a>
+      </div>
+    </div>
+  </body>
+</html>

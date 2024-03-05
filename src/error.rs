@@ -18,6 +18,9 @@ pub enum ApplicationError {
     #[error("All available ports have been allocated already")]
     EmptyAllocator,
 
+    #[error("Git command could not be run:\n\n{0:?}")]
+    GitCommand(anyhow::Error),
+
     #[error("Configuration is invalid:\n\n{0:?}")]
     InvalidConfig(anyhow::Error),
 
@@ -29,6 +32,9 @@ pub enum ApplicationError {
 
     #[error("The current directory does not contain a project")]
     NoActiveProject,
+
+    #[error("Repo {0} does not exist")]
+    NonExistentRepo(String),
 
     #[error("Project {0} does not exist")]
     NonExistentProject(String),
