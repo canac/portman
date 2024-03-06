@@ -1,0 +1,14 @@
+[projects.app1]
+port = 3001
+
+[projects.app2]
+port = 3002
+linked_port = 3000
+
+[projects.app3]
+port = 3003
+directory = "/projects/app3"
+linked_port = 3005
+
+[repos]
+"https://github.com/user/app3.git" = 3004

@@ -106,7 +106,7 @@ mod tests {
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
                 .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
-                .n_times(1),
+                .once(),
         );
 
         let config = Config::load(&deps, &PathBuf::from("config.toml"))
@@ -122,7 +122,7 @@ mod tests {
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
                 .answers(|_| bail!("Read error"))
-                .n_times(1),
+                .once(),
         );
 
         let err = Config::load(&deps, &PathBuf::from("config.toml")).unwrap_err();

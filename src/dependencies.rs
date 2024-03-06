@@ -1,8 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use entrait::entrait;
 use rand::prelude::*;
 use std::collections::HashSet;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::io::{stdout, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -52,7 +53,14 @@ fn exec(_deps: &impl std::any::Any, command: &mut Command, _: &mut ()) -> Result
         None => String::from("unknown"),
     };
     let output = String::from_utf8_lossy(&output.stderr);
-    bail!("Command \"{command:?}\" failed with exit code {exit_code} and output:\n{output}");
+    let command = std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .collect::<Vec<_>>()
+        .join(OsStr::new(" "));
+    Err(anyhow!(
+        "Command \"{}\" failed with exit code {exit_code} and output:\n{output}",
+        command.to_string_lossy()
+    ))
 }
 
 #[entrait(pub ReadFile, mock_api=ReadFileMock)]
@@ -68,6 +76,11 @@ fn read_file(_deps: &impl std::any::Any, path: &Path) -> Result<Option<String>> 
         }
     }
     .with_context(|| format!("Failed to read file at \"{}\"", path.display()))
+}
+
+#[entrait(pub Tty, mock_api=TtyMock)]
+fn is_tty(_deps: &impl std::any::Any) -> bool {
+    stdout().is_terminal()
 }
 
 #[entrait(pub WorkingDirectory, mock_api=WorkingDirectoryMock)]
