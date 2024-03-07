@@ -330,13 +330,14 @@ fn run(
                 None => registry.get_repo_port(&get_active_repo(deps)?)?,
             };
             registry.link(deps, &project_name, port)?;
+            writeln!(output, "Linked port {port} to project {project_name}").unwrap();
             if save_repo {
                 if let Ok(repo) = get_active_repo(deps) {
+                    writeln!(output, "Saved default port {port} for repo {repo}").unwrap();
                     registry.set_repo_port(repo, port);
                 }
             }
             registry.save(deps)?;
-            writeln!(output, "Linked port {port} to project {project_name}").unwrap();
         }
 
         Cli::Unlink { port } => {
@@ -1025,7 +1026,7 @@ mod tests {
         let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
         let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Linked port 3005 to project app3\n");
+        assert_eq!(output, "Linked port 3005 to project app3\nSaved default port 3005 for repo https://github.com/user/app3.git\n");
     }
 
     #[test]
