@@ -64,20 +64,6 @@ impl Registry {
 
         let mut dirty = false;
         let mut directories: HashSet<PathBuf> = HashSet::new();
-        let mut repo_ports: HashSet<u16> = HashSet::new();
-
-        // Remove duplicate repos
-        let repos = registry_data
-            .repos
-            .into_iter()
-            .filter(|(_, port)| {
-                let new_port = repo_ports.insert(*port);
-                if !new_port {
-                    dirty = true;
-                }
-                new_port
-            })
-            .collect();
 
         // Validate all ports in the registry against the config and regenerate
         // invalid ones as necessary
@@ -121,7 +107,7 @@ impl Registry {
         let registry = Self {
             store_path,
             projects,
-            repos,
+            repos: registry_data.repos,
             allocator,
             dirty,
         };
@@ -436,25 +422,6 @@ pub mod tests {
         let allocator = PortAllocator::new(config.get_valid_ports());
         let err = Registry::new(&mocked_deps, allocator).unwrap_err();
         assert!(matches!(err, ApplicationError::InvalidProjectName(name, _) if name == "App1"));
-    }
-
-    #[test]
-    fn test_load_duplicate_repo() {
-        let config = Config::default();
-        let mocked_deps = Unimock::new((
-            data_dir_mock(),
-            read_registry_mock(Some(
-                "[projects]
-
-[repos]
-'https://github.com/user/app2.git' = 3000
-'https://github.com/user/app3.git' = 3000",
-            )),
-        ));
-        let allocator = PortAllocator::new(config.get_valid_ports());
-        let registry = Registry::new(&mocked_deps, allocator).unwrap();
-        assert_eq!(registry.repos.len(), 1);
-        assert!(registry.dirty);
     }
 
     #[test]
