@@ -30,7 +30,7 @@ use error::ApplicationError;
 use registry::Project;
 use std::fmt::Write;
 use std::path::PathBuf;
-use std::process::{self, Command};
+use std::process::{Command, ExitCode};
 
 // Find and return a reference to the active project based on the current directory
 fn get_active_project<'registry>(
@@ -367,7 +367,7 @@ fn run(
     Ok(output)
 }
 
-fn main() {
+fn main() -> ExitCode {
     let deps = Impl::new(());
     let cli = Cli::parse_from(deps.get_args());
 
@@ -384,7 +384,7 @@ fn main() {
         Err(err) => err,
         Ok(output) => {
             print!("{output}");
-            return;
+            return ExitCode::SUCCESS;
         }
     };
     eprintln!("{err}");
@@ -436,7 +436,7 @@ fn main() {
         _ => {}
     };
 
-    process::exit(1);
+    ExitCode::FAILURE
 }
 
 #[cfg(test)]
