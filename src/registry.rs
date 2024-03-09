@@ -282,7 +282,7 @@ impl Registry {
     }
 
     // Get the port associated with a repo
-    pub fn get_repo_port(&mut self, repo: &str) -> Result<u16> {
+    pub fn get_repo_port(&self, repo: &str) -> Result<u16> {
         self.repos
             .get(repo)
             .copied()
@@ -294,6 +294,20 @@ impl Registry {
         if self.repos.insert(repo, port) != Some(port) {
             self.dirty = true;
         }
+    }
+
+    // Delete a repo's port association
+    pub fn delete_repo(&mut self, repo: &str) -> Result<u16> {
+        let deleted_repo = self.repos.remove(repo);
+        if deleted_repo.is_some() {
+            self.dirty = true;
+        }
+        deleted_repo.ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_string()))
+    }
+
+    // Delete a repo's port association
+    pub fn iter_repos(&self) -> impl Iterator<Item = (&String, &u16)> {
+        self.repos.iter()
     }
 
     // Find and return the project that matches the current working directory, if any
@@ -833,6 +847,61 @@ linked_port = 3000",
     fn test_unlink_not_linked() {
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.unlink(3001).is_none());
+        assert!(!registry.dirty);
+    }
+
+    #[test]
+    fn test_get_repo_port() {
+        let registry = get_mocked_registry().unwrap();
+        assert_eq!(
+            registry
+                .get_repo_port("https://github.com/user/app3.git")
+                .unwrap(),
+            3004
+        );
+    }
+
+    #[test]
+    fn test_get_repo_port_nonexistent() {
+        let registry = get_mocked_registry().unwrap();
+        let err = registry
+            .get_repo_port("https://github.com/user/project.git")
+            .unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
+    }
+
+    #[test]
+    fn test_set_repo_port() {
+        let mut registry = get_mocked_registry().unwrap();
+        let repo = "https://github.com/user/project.git";
+        registry.set_repo_port(repo.to_string(), 3005);
+        assert!(registry.dirty);
+        assert_eq!(registry.repos.get(repo).unwrap(), &3005);
+    }
+
+    #[test]
+    fn test_set_repo_port_existing() {
+        let mut registry = get_mocked_registry().unwrap();
+        let repo = "https://github.com/user/app3.git";
+        registry.set_repo_port(repo.to_string(), 3004);
+        assert!(!registry.dirty);
+        assert_eq!(registry.repos.get(repo).unwrap(), &3004);
+    }
+
+    #[test]
+    fn test_delete_repo_port() {
+        let mut registry = get_mocked_registry().unwrap();
+        let repo = "https://github.com/user/app3.git";
+        assert_eq!(registry.delete_repo(repo).unwrap(), 3004);
+        assert!(registry.dirty);
+    }
+
+    #[test]
+    fn test_delete_repo_port_nonexistent() {
+        let mut registry = get_mocked_registry().unwrap();
+        let repo = "https://github.com/user/project.git";
+        let err = registry.delete_repo(repo).unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
         assert!(!registry.dirty);
     }
 

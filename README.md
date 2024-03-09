@@ -207,6 +207,14 @@ Links a project to the specified port. `port` defaults to the port associated wi
 
 Unlinks the port from the project it was linked to.
 
+### `portman repo delete <repo>`
+
+Deletes the repo and its associated port.
+
+### `portman repo list`
+
+Lists all repos and their associated ports.
+
 ### `portman caddyfile`
 
 Prints a valid Caddyfile that reverse-proxies all projects' ports to https://\*.localhost URLs where the subdomain is the project name.

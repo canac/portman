@@ -21,6 +21,7 @@ use crate::init::init_fish;
 use crate::registry::Registry;
 use anyhow::Context;
 use clap::Parser;
+use cli::Repo;
 use dependencies::{
     Args, CheckPath, ChoosePort, DataDir, Environment, Exec, ReadFile, Tty, WorkingDirectory,
     WriteFile,
@@ -63,6 +64,10 @@ fn format_project(name: &str, project: &Project) -> String {
         .map(|port| format!(" -> :{port}"))
         .unwrap_or_default();
     format!("{name} :{}{linked_port}{directory}", project.port)
+}
+
+fn format_repo(repo: &str, port: u16) -> String {
+    format!("{repo}: {port}")
 }
 
 fn create(
@@ -352,6 +357,22 @@ fn run(
             };
         }
 
+        Cli::Repo(subcommand) => match subcommand {
+            Repo::Delete { repo } => {
+                let mut registry = load_registry(deps)?;
+                let port = registry.delete_repo(&repo)?;
+                writeln!(output, "Deleted repo {}", format_repo(&repo, port)).unwrap();
+                registry.save(deps)?;
+            }
+
+            Repo::List => {
+                let registry = load_registry(deps)?;
+                for (repo, port) in registry.iter_repos() {
+                    writeln!(output, "{}", format_repo(repo, *port)).unwrap();
+                }
+            }
+        },
+
         Cli::Caddyfile => {
             let registry = load_registry(deps)?;
             write!(output, "{}", generate_caddyfile(deps, &registry)?).unwrap();
@@ -379,6 +400,9 @@ fn main() -> ExitCode {
     } else {
         None
     };
+
+    let linking_project = matches!(cli, Cli::Link { .. });
+    let deleting_repo = matches!(cli, Cli::Repo(Repo::Delete { .. }));
 
     let err = match run(&deps, cli) {
         Err(err) => err,
@@ -431,7 +455,12 @@ fn main() -> ExitCode {
             eprintln!("\nTry running the command again in a directory containing a project or providing an explicit project name.");
         }
         ApplicationError::NonExistentRepo(_) => {
-            eprintln!("\nTry providing an explicit port.");
+            if linking_project {
+                eprintln!("\nTry providing an explicit port.");
+            }
+            if deleting_repo {
+                eprintln!("\nTry running `portman repo list` to see which repos exist.");
+            }
         }
         _ => {}
     };
@@ -1099,6 +1128,43 @@ mod tests {
 
         let output = run(&mocked_deps, cli).unwrap();
         assert_eq!(output, "Port 3005 was not linked to a project\n");
+    }
+
+    #[test]
+    fn test_repo_delete() {
+        let mocked_deps = Unimock::new((
+            readwrite_mocks(),
+            args_mock("portman repo delete https://github.com/user/app3.git"),
+            write_registry_mock(include_str!("snapshots/repo_delete.toml")),
+        ));
+        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
+
+        let output = run(&mocked_deps, cli).unwrap();
+        assert_eq!(
+            output,
+            "Deleted repo https://github.com/user/app3.git: 3004\n"
+        );
+    }
+
+    #[test]
+    fn test_repo_delete_non_existent() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman repo delete https://github.com/user/project.git"),
+        ));
+        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
+
+        let err = run(&mocked_deps, cli).unwrap_err();
+        assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
+    }
+
+    #[test]
+    fn test_repo_delete_list() {
+        let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman repo list")));
+        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
+
+        let output = run(&mocked_deps, cli).unwrap();
+        assert_eq!(output, "https://github.com/user/app3.git: 3004\n");
     }
 
     #[test]

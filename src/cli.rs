@@ -16,6 +16,19 @@ pub enum Config {
     Edit,
 }
 
+#[derive(Subcommand)]
+#[cfg_attr(test, derive(Debug))]
+pub enum Repo {
+    /// Delete a repo and its associated port
+    Delete {
+        /// The repo to delete
+        repo: String,
+    },
+
+    /// List all repos and their associated ports
+    List,
+}
+
 #[derive(Parser)]
 #[cfg_attr(test, derive(Debug))]
 #[clap(about, version, author)]
@@ -89,6 +102,10 @@ pub enum Cli {
         /// The port to unlink
         port: u16,
     },
+
+    /// Manage repos
+    #[clap(subcommand)]
+    Repo(Repo),
 
     /// Print the generated Caddyfile
     Caddyfile,
