@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Context, Result};
+use crate::error::{ExecError, ExecResult};
+use anyhow::{Context, Result};
 use entrait::entrait;
 use rand::prelude::*;
 use std::collections::HashSet;
@@ -37,45 +38,86 @@ pub fn read_var(_deps: &impl std::any::Any, var: &str) -> Result<String> {
     std::env::var(var_name).with_context(|| format!("Failed to read ${var} environment variable"))
 }
 
-// The second unused arg is a workaround so that we can match against command in mocks
-// https://github.com/audunhalland/unimock/issues/40
-#[entrait(pub Exec, mock_api=ExecMock)]
-fn exec(_deps: &impl std::any::Any, command: &mut Command, _: &mut ()) -> Result<String> {
-    let output = command
-        .output()
-        .with_context(|| format!("Failed to run command \"{command:?}\""))?;
-    let status = output.status;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into());
-    }
-    let exit_code = match status.code() {
-        Some(code) => code.to_string(),
-        None => String::from("unknown"),
-    };
-    let output = String::from_utf8_lossy(&output.stderr);
-    let command = std::iter::once(command.get_program())
-        .chain(command.get_args())
-        .collect::<Vec<_>>()
-        .join(OsStr::new(" "));
-    Err(anyhow!(
-        "Command \"{}\" failed with exit code {exit_code} and output:\n{output}",
-        command.to_string_lossy()
-    ))
+pub struct ExecStatus {
+    pub success: bool,
+    pub output: String,
 }
 
-#[entrait(pub ReadFile, mock_api=ReadFileMock)]
-fn read_file(_deps: &impl std::any::Any, path: &Path) -> Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => Ok(Some(content)),
-        Err(io_err) => {
-            if matches!(io_err.kind(), std::io::ErrorKind::NotFound) {
-                Ok(None)
+// The second unused arg is a workaround so that we can match against command in mocks
+// https://github.com/audunhalland/unimock/issues/40
+#[entrait(pub LowLevelExec, mock_api=ExecMock)]
+fn low_level_exec(
+    _deps: &impl std::any::Any,
+    command: &mut Command,
+    _: &mut (),
+) -> std::io::Result<ExecStatus> {
+    command.output().map(|output| {
+        let success = output.status.success();
+        ExecStatus {
+            success,
+            output: String::from_utf8_lossy(&if success {
+                output.stdout
             } else {
-                Err(io_err)
+                output.stderr
+            })
+            .to_string(),
+        }
+    })
+}
+
+pub trait Exec {
+    fn exec(&self, command: &mut Command) -> ExecResult<String>;
+}
+
+// Generate a human-readable representation of the command
+fn format_command(command: &Command) -> OsString {
+    std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .collect::<Vec<_>>()
+        .join(OsStr::new(" "))
+}
+
+impl<T: LowLevelExec> Exec for T {
+    fn exec(&self, command: &mut Command) -> ExecResult<String> {
+        let status = self
+            .low_level_exec(command, &mut ())
+            .map_err(|io_err| ExecError::IO {
+                command: format_command(command),
+                io_err,
+            })?;
+        if status.success {
+            return Ok(status.output);
+        }
+        Err(ExecError::Failed {
+            command: format_command(command),
+            output: status.output,
+        })
+    }
+}
+
+#[entrait(pub LowLevelReadFile, mock_api=ReadFileMock)]
+fn low_level_read_file(_deps: &impl std::any::Any, path: &Path) -> std::io::Result<String> {
+    std::fs::read_to_string(path)
+}
+
+pub trait ReadFile {
+    fn read_file(&self, path: &Path) -> Result<Option<String>>;
+}
+
+impl<T: LowLevelReadFile> ReadFile for T {
+    fn read_file(&self, path: &Path) -> Result<Option<String>> {
+        match self.low_level_read_file(path) {
+            Ok(content) => Ok(Some(content)),
+            Err(io_err) => {
+                if matches!(io_err.kind(), std::io::ErrorKind::NotFound) {
+                    Ok(None)
+                } else {
+                    Err(io_err)
+                }
             }
         }
+        .with_context(|| format!("Failed to read file at \"{}\"", path.display()))
     }
-    .with_context(|| format!("Failed to read file at \"{}\"", path.display()))
 }
 
 #[entrait(pub Tty, mock_api=TtyMock)]

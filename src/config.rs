@@ -1,10 +1,9 @@
+use crate::dependencies::ReadFile;
 use crate::error::{ApplicationError, Result};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::path::Path;
-
-use crate::dependencies::ReadFile;
 
 fn default_ranges() -> Vec<(u16, u16)> {
     vec![(3000, 3999)]
@@ -97,7 +96,10 @@ impl Display for Config {
 mod tests {
     use super::*;
     use crate::dependencies;
-    use std::path::PathBuf;
+    use std::{
+        io::{Error, ErrorKind},
+        path::PathBuf,
+    };
     use unimock::{matching, MockFn, Unimock};
 
     #[test]
@@ -105,7 +107,7 @@ mod tests {
         let deps = Unimock::new(
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
-                .answers(|_| Ok(Some(String::from("ranges = [[3000, 3999]]\nreserved = []"))))
+                .answers(|_| Ok(String::from("ranges = [[3000, 3999]]\nreserved = []")))
                 .once(),
         );
 
@@ -117,11 +119,24 @@ mod tests {
     }
 
     #[test]
-    fn test_load_missing_config() {
+    fn test_load_config_not_found() {
         let deps = Unimock::new(
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
-                .answers(|_| bail!("Read error"))
+                .answers(|_| Err(Error::from(ErrorKind::NotFound)))
+                .once(),
+        );
+
+        let config = Config::load(&deps, &PathBuf::from("config.toml")).unwrap();
+        assert!(config.is_none());
+    }
+
+    #[test]
+    fn test_load_config_not_readable() {
+        let deps = Unimock::new(
+            dependencies::ReadFileMock
+                .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
+                .answers(|_| Err(Error::from(ErrorKind::PermissionDenied)))
                 .once(),
         );
 

@@ -1,8 +1,8 @@
 use crate::allocator::PortAllocator;
 use crate::config::Config;
 use crate::dependencies::{
-    ArgsMock, ChoosePortMock, DataDirMock, EnvironmentMock, ExecMock, ReadFileMock, TtyMock,
-    WorkingDirectoryMock, WriteFileMock,
+    ArgsMock, ChoosePortMock, DataDirMock, EnvironmentMock, ExecMock, ExecStatus, ReadFileMock,
+    TtyMock, WorkingDirectoryMock, WriteFileMock,
 };
 use crate::error::Result;
 use crate::registry::Registry;
@@ -42,7 +42,12 @@ pub fn data_dir_mock() -> impl Clause {
 pub fn exec_mock() -> impl Clause {
     ExecMock
         .each_call(matching!((command, _) if command.get_program() == "caddy" || command.get_program() == "editor"))
-        .answers(|_| Ok(String::new()))
+        .answers(|_| {
+            Ok(ExecStatus {
+                success: true,
+                output: String::new(),
+            })
+        })
         .at_least_times(1)
 }
 
@@ -50,7 +55,12 @@ pub fn exec_git_mock(project: &str) -> impl Clause {
     let repo = format!("https://github.com/user/{project}.git\n");
     ExecMock
         .each_call(matching!((command, _) if command.get_program() == "git"))
-        .answers(move |_| Ok(repo.clone()))
+        .answers(move |_| {
+            Ok(ExecStatus {
+                success: true,
+                output: format!("{repo}\n"),
+            })
+        })
         .at_least_times(1)
 }
 
@@ -60,7 +70,7 @@ pub fn read_registry_mock(contents: Option<&str>) -> impl Clause {
         .to_string();
     ReadFileMock
         .each_call(matching!((path) if path == &PathBuf::from("/data/registry.toml")))
-        .answers(move |_| Ok(Some(result.clone())))
+        .answers(move |_| Ok(result.clone()))
         .once()
 }
 

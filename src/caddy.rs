@@ -1,4 +1,5 @@
 use crate::dependencies::{DataDir, Environment, Exec, ReadFile, WriteFile};
+use crate::error::{CaddyError, CaddyResult};
 use crate::registry::Registry;
 use anyhow::Result;
 use std::fmt::Write;
@@ -151,7 +152,7 @@ fn update_import(
 pub fn reload(
     deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
     registry: &Registry,
-) -> Result<()> {
+) -> CaddyResult<()> {
     // Determine the caddyfile path
     let import_path = import_path(deps)?;
     deps.write_file(&import_path, &generate_caddyfile(deps, registry)?)?;
@@ -177,8 +178,8 @@ pub fn reload(
         std::process::Command::new("caddy")
             .args(["reload", "--adapter", "caddyfile", "--config"])
             .arg(caddyfile_path.clone()),
-        &mut (),
-    )?;
+    )
+    .map_err(CaddyError::Exec)?;
 
     Ok(())
 }

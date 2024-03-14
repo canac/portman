@@ -397,12 +397,13 @@ pub mod tests {
         read_var_mock, write_file_mock,
     };
     use anyhow::bail;
+    use std::io::{Error, ErrorKind};
     use unimock::{matching, Clause, MockFn, Unimock};
 
     fn read_caddyfile_mock() -> impl Clause {
         ReadFileMock
             .each_call(matching!((path) if path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-            .answers(|_| Ok(None))
+            .answers(|_| Err(Error::from(ErrorKind::NotFound)))
             .once()
     }
 
@@ -529,7 +530,7 @@ linked_port = 3000",
             data_dir_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-                .answers(|_| bail!("Error reading"))
+                .answers(|_| Err(Error::from(ErrorKind::PermissionDenied)))
                 .once(),
             read_var_mock(),
             write_file_mock(),
@@ -591,7 +592,7 @@ linked_port = 3000",
             write_file_mock(),
             dependencies::ExecMock
                 .each_call(matching!((command, _) if command.get_program() == "caddy"))
-                .answers(|_| bail!("Error executing"))
+                .answers(|_| Err(Error::from(ErrorKind::NotFound)))
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();

@@ -27,9 +27,10 @@ use dependencies::{
     WriteFile,
 };
 use entrait::Impl;
-use error::ApplicationError;
+use error::{ApplicationError, CaddyError, ExecError};
 use registry::Project;
-use std::fmt::Write;
+use std::fmt::Write as FmtWrite;
+use std::io::{ErrorKind, Write as IoWrite};
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
@@ -45,12 +46,9 @@ fn get_active_project<'registry>(
 
 // Find and return a reference to the active project based on the current directory
 fn get_active_repo(deps: &impl Exec) -> Result<String> {
-    deps.exec(
-        Command::new("git").args(["remote", "get-url", "origin"]),
-        &mut (),
-    )
-    .map(|repo| repo.trim_end().to_string())
-    .map_err(ApplicationError::GitCommand)
+    deps.exec(Command::new("git").args(["remote", "get-url", "origin"]))
+        .map(|repo| repo.trim_end().to_string())
+        .map_err(ApplicationError::GitCommand)
 }
 
 fn format_project(name: &str, project: &Project) -> String {
@@ -197,7 +195,7 @@ fn run(
                     config_path.display()
                 )
                 .unwrap();
-                deps.exec(Command::new(editor).arg(config_path), &mut ())
+                deps.exec(Command::new(editor).arg(config_path))
                     .map_err(ApplicationError::EditorCommand)?;
             }
         },
@@ -380,7 +378,7 @@ fn run(
 
         Cli::ReloadCaddy => {
             let registry = load_registry(deps)?;
-            reload(deps, &registry)?;
+            reload(deps, &registry).map_err(ApplicationError::Caddy)?;
             writeln!(output, "Successfully reloaded caddy").unwrap();
         }
     };
@@ -388,8 +386,23 @@ fn run(
     Ok(output)
 }
 
-fn main() -> ExitCode {
-    let deps = Impl::new(());
+enum RunStatus {
+    Success,
+    Failure,
+}
+
+fn run_and_suggest(
+    deps: &(impl Args
+          + CheckPath
+          + ChoosePort
+          + DataDir
+          + Environment
+          + Exec
+          + ReadFile
+          + Tty
+          + WriteFile
+          + WorkingDirectory),
+) -> (RunStatus, String) {
     let cli = Cli::parse_from(deps.get_args());
 
     let has_create_project_name = if let Cli::Create {
@@ -404,93 +417,123 @@ fn main() -> ExitCode {
     let linking_project = matches!(cli, Cli::Link { .. });
     let deleting_repo = matches!(cli, Cli::Repo(Repo::Delete { .. }));
 
-    let err = match run(&deps, cli) {
+    let err = match run(deps, cli) {
         Err(err) => err,
         Ok(output) => {
-            print!("{output}");
-            return ExitCode::SUCCESS;
+            return (RunStatus::Success, output);
         }
     };
-    eprintln!("{err}");
+
+    let mut output = format!("{err}\n");
 
     match err {
-        ApplicationError::Caddy(_) => {
-            eprintln!("\nTry running `brew install caddy`");
+        ApplicationError::Caddy(CaddyError::Exec(ExecError::IO { io_err, .. }))
+            if io_err.kind() == ErrorKind::NotFound =>
+        {
+            output +=
+                "Try running `brew install caddy` or making sure that caddy is in your PATH.\n";
         }
         ApplicationError::DuplicateDirectory(name, _) => {
-            eprintln!("\nTry running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.");
+            writeln!(output, "Try running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.").unwrap();
         }
         ApplicationError::DuplicateProject(_) => {
             if let Some(has_project_name) = has_create_project_name {
                 if has_project_name {
-                    eprintln!(
-                        "\nTry providing the --overwrite flag to modify the existing project."
-                    );
+                    output +=
+                        "Try providing the --overwrite flag to modify the existing project.\n";
                 } else {
-                    eprintln!("\nTry manually providing a project name.");
+                    output += "Try manually providing a project name.\n";
                 }
             }
         }
-        ApplicationError::EditorCommand(_) => {
-            eprintln!("\nTry setting the $EDITOR environment variable to a valid command like vi or nano.");
+        ApplicationError::EditorCommand(ExecError::IO { io_err, .. })
+            if io_err.kind() == ErrorKind::NotFound =>
+        {
+            output += "Try setting the $EDITOR environment variable to a valid command like vi or nano.\n";
         }
         ApplicationError::EmptyAllocator => {
-            eprintln!("\nTry running `portman config edit` to edit the config file and modify the `ranges` field to allow more ports.");
+            output += "Try running `portman config edit` to edit the config file and modify the `ranges` field to allow more ports.\n";
         }
         ApplicationError::GitCommand(_) => {
-            eprintln!("\nTry running `portman link` in a directory with a git repo or providing an explicit port.");
+            output += "Try running `portman link` in a directory with a git repo or providing an explicit port.\n";
         }
         ApplicationError::InvalidConfig(_) => {
-            eprintln!("\nTry running `portman config edit` to edit the config file and correct the error.");
+            output += "Try running `portman config edit` to edit the config file and correct the error.\n";
         }
         ApplicationError::InvalidProjectName(_, _) => {
             if has_create_project_name == Some(false) {
-                eprintln!("\nTry manually providing a project name.");
+                output += "Try manually providing a project name.\n";
             }
         }
         ApplicationError::MissingCustomConfig(path) => {
-            eprintln!("\nTry creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.", path.display());
+            writeln!(output, "Try creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.", path.display()).unwrap();
         }
         ApplicationError::NoActiveProject => {
-            eprintln!("\nTry running the command again in a directory containing a project or providing an explicit project name.");
+            output+= "Try running the command again in a directory containing a project or providing an explicit project name.\n";
+        }
+        ApplicationError::NonExistentProject(_) => {
+            output += "Try providing a different project name.\n";
         }
         ApplicationError::NonExistentRepo(_) => {
             if linking_project {
-                eprintln!("\nTry providing an explicit port.");
+                output += "Try providing an explicit port.\n";
             }
             if deleting_repo {
-                eprintln!("\nTry running `portman repo list` to see which repos exist.");
+                output += "Try running `portman repo list` to see which repos exist.\n";
             }
         }
         _ => {}
     };
 
-    ExitCode::FAILURE
+    (RunStatus::Failure, output)
+}
+
+fn main() -> ExitCode {
+    let deps = Impl::new(());
+    let (status, output) = run_and_suggest(&deps);
+    match status {
+        RunStatus::Success => {
+            std::io::stdout().write_all(output.as_bytes()).unwrap();
+            ExitCode::SUCCESS
+        }
+        RunStatus::Failure => {
+            std::io::stderr().write_all(output.as_bytes()).unwrap();
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dependencies::{CheckPathMock, EnvironmentMock, ExecMock, ReadFileMock};
+    use crate::dependencies::{
+        CheckPathMock, ChoosePortMock, EnvironmentMock, ExecMock, ExecStatus, ReadFileMock,
+    };
     use crate::mocks::{
         args_mock, choose_port_mock, cwd_mock, data_dir_mock, exec_git_mock, exec_mock,
         read_registry_mock, read_var_mock, tty_mock, write_caddyfile_mock, write_file_mock,
         write_registry_mock,
     };
     use anyhow::bail;
+    use std::io::Error;
     use unimock::{matching, Clause, MockFn, Unimock};
 
     fn exec_git_no_repo_mock() -> impl Clause {
         ExecMock
             .each_call(matching!((command, _) if command.get_program() == "git"))
-            .answers(|_| bail!("No repo"))
+            .answers(|_| {
+                Ok(ExecStatus {
+                    success: false,
+                    output: String::from("No repo\n"),
+                })
+            })
             .once()
     }
 
     fn read_file_mock() -> impl Clause {
         ReadFileMock
             .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml") || path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-            .answers(|_| Ok(None))
+            .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
             .at_least_times(1)
     }
 
@@ -540,9 +583,8 @@ mod tests {
     #[test]
     fn test_config_init_fish() {
         let mocked_deps = Unimock::new(args_mock("portman init fish"));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert!(!output.is_empty());
     }
 
@@ -554,9 +596,8 @@ mod tests {
             exec_mock(),
             read_var_mock(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Opening \"/data/config.toml\" with \"editor\"\n");
     }
 
@@ -574,27 +615,62 @@ mod tests {
                 .answers(|_| bail!("Failed"))
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::Other(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(output, "Failed\n");
     }
 
     #[test]
-    fn test_config_edit_editor_exec_fails() {
+    fn test_config_edit_editor_not_found() {
         let mocked_deps = Unimock::new((
             args_mock("portman config edit"),
             data_dir_mock(),
             read_var_mock(),
             ExecMock
                 .each_call(matching!((command, _) if command.get_program() == "editor"))
-                .answers(|_| bail!("Failed"))
+                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::EditorCommand(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Editor command could not be run:
+
+Command "editor /data/config.toml" failed:
+entity not found
+Try setting the $EDITOR environment variable to a valid command like vi or nano.
+"#
+        );
+    }
+
+    #[test]
+    fn test_config_edit_editor_failed() {
+        let mocked_deps = Unimock::new((
+            args_mock("portman config edit"),
+            data_dir_mock(),
+            read_var_mock(),
+            ExecMock
+                .each_call(matching!((command, _) if command.get_program() == "editor"))
+                .answers(|_| {
+                    Ok(ExecStatus {
+                        success: false,
+                        output: String::from("Invalid config\n"),
+                    })
+                })
+                .once(),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Editor command could not be run:
+
+Command "editor /data/config.toml" failed with output:
+Invalid config
+
+"#
+        );
     }
 
     #[test]
@@ -605,10 +681,17 @@ mod tests {
             read_file_mock(),
             read_var_mock(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Config path: /data/config.toml\nRegistry path: /data/registry.toml\nConfiguration:\n--------------\nAllowed port ranges: 3000-3999\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Config path: /data/config.toml
+Registry path: /data/registry.toml
+Configuration:
+--------------
+Allowed port ranges: 3000-3999
+"
+        );
     }
 
     #[test]
@@ -619,13 +702,21 @@ mod tests {
             read_var_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
-                .answers(|_| Ok(Some(include_str!("fixtures/config.toml").to_string())))
+                .answers(|_| Ok(include_str!("fixtures/custom_config.toml").to_string()))
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Config path: /data/config.toml\nRegistry path: /data/registry.toml\nConfiguration:\n--------------\nAllowed port ranges: 2000-2199 & 4100-4199\nReserved ports: 2002, 4004\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Config path: /data/config.toml
+Registry path: /data/registry.toml
+Configuration:
+--------------
+Allowed port ranges: 2000-2199 & 4100-4199
+Reserved ports: 2002, 4004
+"
+        );
     }
 
     #[test]
@@ -639,17 +730,25 @@ mod tests {
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
-                .answers(|_| Ok(Some(include_str!("fixtures/config.toml").to_string())))
+                .answers(|_| Ok(include_str!("fixtures/custom_config.toml").to_string()))
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Config path: /data/custom_config.toml\nRegistry path: /data/registry.toml\nConfiguration:\n--------------\nAllowed port ranges: 2000-2199 & 4100-4199\nReserved ports: 2002, 4004\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Config path: /data/custom_config.toml
+Registry path: /data/registry.toml
+Configuration:
+--------------
+Allowed port ranges: 2000-2199 & 4100-4199
+Reserved ports: 2002, 4004
+"
+        );
     }
 
     #[test]
-    fn test_config_show_custom_path_missing() {
+    fn test_config_show_custom_path_not_found() {
         let mocked_deps = Unimock::new((
             args_mock("portman config show"),
             EnvironmentMock
@@ -658,32 +757,47 @@ mod tests {
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
-                .answers(|_| Ok(None))
+                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::MissingCustomConfig(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Custom config file at "/data/custom_config.toml" does not exist
+Try creating a config file at "/data/custom_config.toml" or unsetting the $PORTMAN_CONFIG environment variable.
+"#
+        );
     }
 
     #[test]
     fn test_get() {
         let mocked_deps =
             Unimock::new((readonly_mocks(), args_mock("portman get"), cwd_mock("app3")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "3003\n");
     }
 
     #[test]
     fn test_get_name() {
         let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman get app2")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "3002\n");
+    }
+
+    #[test]
+    fn test_get_name_non_existent() {
+        let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman get project")));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Project project does not exist
+Try providing a different project name.
+"
+        );
     }
 
     #[test]
@@ -694,9 +808,8 @@ mod tests {
             cwd_mock("app3"),
             tty_mock(true),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "port: 3003\nname: app3\ndirectory: /projects/app3\nlinked port: \n"
@@ -711,10 +824,16 @@ mod tests {
             cwd_mock("app3"),
             tty_mock(false),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "3003\napp3\n/projects/app3\n\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"3003
+app3
+/projects/app3
+
+"
+        );
     }
 
     #[test]
@@ -728,9 +847,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3004 (/projects/project)\n"
@@ -748,10 +866,63 @@ mod tests {
             tty_mock(false),
             write_registry_mock(include_str!("snapshots/create.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "3004\n");
+    }
+
+    #[test]
+    fn test_create_duplicate_directory() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create project"),
+            cwd_mock("app3"),
+            exec_git_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Project app3 already uses the directory "/projects/app3"
+Try running the command in a different directory, providing the --no-activate flag, or running `portman delete app3` and rerunning the command.
+"#
+        );
+    }
+
+    #[test]
+    fn test_create_duplicate_project() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create"),
+            cwd_mock("app3"),
+            exec_git_mock("app3"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"A project already has the name app3
+Try manually providing a project name.
+"
+        );
+    }
+
+    #[test]
+    fn test_create_duplicate_project_explicit_name() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create app3"),
+            cwd_mock("app3"),
+            exec_git_mock("app3"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"A project already has the name app3
+Try providing the --overwrite flag to modify the existing project.
+"
+        );
     }
 
     #[test]
@@ -765,9 +936,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_link.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3005 -> :3004 (/projects/project)\n"
@@ -785,9 +955,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_no_repo.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3004 (/projects/project)\n"
@@ -805,12 +974,129 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_unknown_repo.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3004 (/projects/project)\n"
+        );
+    }
+
+    #[test]
+    fn test_create_caddy_failed() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create"),
+            choose_port_mock(),
+            cwd_mock("project"),
+            exec_git_mock("project"),
+            ExecMock
+                .each_call(matching!((command, _) if command.get_program() == "caddy"))
+                .answers(|_| {
+                    Ok(ExecStatus {
+                        success: false,
+                        output: String::from("Invalid Caddyfile\n"),
+                    })
+                })
+                .once(),
+            write_file_mock(),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Error reloading caddy:
+Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed with output:
+Invalid Caddyfile
+
+"#
+        );
+    }
+
+    #[test]
+    fn test_create_caddy_not_found() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create"),
+            choose_port_mock(),
+            cwd_mock("project"),
+            exec_git_mock("project"),
+            ExecMock
+                .each_call(matching!((command, _) if command.get_program() == "caddy"))
+                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
+                .once(),
+            write_file_mock(),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Error reloading caddy:
+Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed:
+entity not found
+Try running `brew install caddy` or making sure that caddy is in your PATH.
+"#
+        );
+    }
+
+    #[test]
+    fn test_create_empty_allocator() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create"),
+            ChoosePortMock.each_call(matching!(_)).returns(None).once(),
+            cwd_mock("project"),
+            exec_git_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"All available ports have been allocated already
+Try running `portman config edit` to edit the config file and modify the `ranges` field to allow more ports.
+"
+        );
+    }
+
+    #[test]
+    fn test_create_invalid_config() {
+        let mocked_deps = Unimock::new((
+            args_mock("portman create"),
+            data_dir_mock(),
+            read_var_mock(),
+            ReadFileMock
+                .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
+                .answers(|_| Ok(include_str!("fixtures/invalid_config.toml").to_string()))
+                .once(),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Configuration is invalid:
+
+Validation error: port ranges must not be empty
+
+Try running `portman config edit` to edit the config file and correct the error.
+"
+        );
+    }
+
+    #[test]
+    fn test_create_invalid_name() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman create"),
+            cwd_mock("-"),
+            exec_git_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Project name "" is invalid: must not be empty
+Try manually providing a project name.
+"#
         );
     }
 
@@ -824,9 +1110,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_no_link.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3004 (/projects/project)\n"
@@ -844,9 +1129,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_name.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Created project project :3004 (/projects/project)\n"
@@ -863,9 +1147,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_no_activate.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Created project project :3004\n");
     }
 
@@ -887,9 +1170,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_overwrite.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Updated project app3 :3003 (/projects/project)\n");
     }
 
@@ -903,9 +1185,8 @@ mod tests {
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_overwrite_link.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Updated project app3 :3003 -> :3004 (/projects/project)\n"
@@ -928,10 +1209,26 @@ mod tests {
             cwd_mock("app3"),
             write_registry_mock(include_str!("snapshots/delete.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Deleted project app3 :3003 (/projects/app3)\n");
+    }
+
+    #[test]
+    fn test_delete_no_active() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman delete"),
+            cwd_mock("app2"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"The current directory does not contain a project
+Try running the command again in a directory containing a project or providing an explicit project name.
+"
+        );
     }
 
     #[test]
@@ -941,9 +1238,8 @@ mod tests {
             args_mock("portman delete app3"),
             write_registry_mock(include_str!("snapshots/delete_name.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Deleted project app3 :3003 (/projects/app3)\n");
     }
 
@@ -958,10 +1254,14 @@ mod tests {
                 .returns(false)
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Deleted 1 project\napp3 :3003 (/projects/app3)\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Deleted 1 project
+app3 :3003 (/projects/app3)
+"
+        );
     }
 
     #[test]
@@ -974,21 +1274,22 @@ mod tests {
                 .returns(true)
                 .once(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Deleted 0 projects\n");
     }
 
     #[test]
     fn test_list() {
         let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman list")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            "app1 :3001\napp2 :3002 -> :3000\napp3 :3003 (/projects/app3)\n"
+            r"app1 :3001
+app2 :3002 -> :3000
+app3 :3003 (/projects/app3)
+"
         );
     }
 
@@ -1001,9 +1302,8 @@ mod tests {
             exec_git_mock("app3"),
             write_registry_mock(include_str!("snapshots/link.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Linked port 3004 to project app3\n");
     }
 
@@ -1015,10 +1315,18 @@ mod tests {
             cwd_mock("app3"),
             exec_git_no_repo_mock(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::GitCommand(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r#"Git command could not be run:
+
+Command "git remote get-url origin" failed with output:
+No repo
+
+Try running `portman link` in a directory with a git repo or providing an explicit port.
+"#
+        );
     }
 
     #[test]
@@ -1029,10 +1337,14 @@ mod tests {
             cwd_mock("app3"),
             exec_git_mock("project"),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Repo https://github.com/user/project.git does not exist
+Try providing an explicit port.
+"
+        );
     }
 
     #[test]
@@ -1052,10 +1364,14 @@ mod tests {
             exec_git_mock("app3"),
             write_registry_mock(include_str!("snapshots/link_port.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
-        assert_eq!(output, "Linked port 3005 to project app3\nSaved default port 3005 for repo https://github.com/user/app3.git\n");
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Linked port 3005 to project app3
+Saved default port 3005 for repo https://github.com/user/app3.git
+"
+        );
     }
 
     #[test]
@@ -1067,9 +1383,8 @@ mod tests {
             exec_git_no_repo_mock(),
             write_registry_mock(include_str!("snapshots/link_port_no_repo.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Linked port 3005 to project app3\n");
     }
 
@@ -1081,9 +1396,8 @@ mod tests {
             cwd_mock("app3"),
             write_registry_mock(include_str!("snapshots/link_port_no_save.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Linked port 3005 to project app3\n");
     }
 
@@ -1094,9 +1408,8 @@ mod tests {
             args_mock("portman link 3005 app3"),
             write_registry_mock(include_str!("snapshots/link_port_and_project.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Linked port 3005 to project app3\n");
     }
 
@@ -1115,18 +1428,16 @@ mod tests {
             args_mock("portman unlink 3000"),
             write_registry_mock(include_str!("snapshots/unlink.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Unlinked port 3000 from project app2\n");
     }
 
     #[test]
     fn test_unlink_not_linked() {
         let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman unlink 3005")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Port 3005 was not linked to a project\n");
     }
 
@@ -1137,9 +1448,8 @@ mod tests {
             args_mock("portman repo delete https://github.com/user/app3.git"),
             write_registry_mock(include_str!("snapshots/repo_delete.toml")),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
             "Deleted repo https://github.com/user/app3.git: 3004\n"
@@ -1152,27 +1462,29 @@ mod tests {
             readonly_mocks(),
             args_mock("portman repo delete https://github.com/user/project.git"),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let err = run(&mocked_deps, cli).unwrap_err();
-        assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            r"Repo https://github.com/user/project.git does not exist
+Try running `portman repo list` to see which repos exist.
+"
+        );
     }
 
     #[test]
     fn test_repo_delete_list() {
         let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman repo list")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "https://github.com/user/app3.git: 3004\n");
     }
 
     #[test]
     fn test_caddyfile() {
         let mocked_deps = Unimock::new((readonly_mocks(), args_mock("portman caddyfile")));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, include_str!("snapshots/Caddyfile"));
     }
 
@@ -1184,9 +1496,8 @@ mod tests {
             exec_mock(),
             write_file_mock(),
         ));
-        let cli = Cli::try_parse_from(mocked_deps.get_args()).unwrap();
 
-        let output = run(&mocked_deps, cli).unwrap();
+        let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(output, "Successfully reloaded caddy\n");
     }
 }
