@@ -3,7 +3,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(ValueEnum, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub enum InitShell {
+    Bash,
     Fish,
+    Zsh,
 }
 
 #[derive(Subcommand)]

@@ -16,6 +16,12 @@ brew install canac/tap/portman
 
 # Start caddy
 brew services start caddy
+
+# Install shell integration (pick one the right one for your shell)
+# Note that fish shell integration is automatically installed if you installed portman via Homebrew
+echo "eval $(portman init bash)" >> ~/.bashrc
+echo "portman init fish | source" >> ~/.config/fish/config.fish
+echo "eval $(portman init zsh)" >> ~/.zshrc
 ```
 
 ## Basic usage
@@ -175,9 +181,9 @@ Prints CLI usage information.
 
 Prints portman version.
 
-### `portman init fish`
+### `portman init [bash|bash|zsh]`
 
-Prints the shell configuration command to enable the shell integration. You can add it to your shell config with `echo "portman init fish | source" >> ~/.config/fish/config.fish`, but this is unnecessary if you installed portman via Homebrew because portman will automatically initialize itself. Currently, only fish shell is supported, but other shells would be trivial to add.
+Prints the shell configuration command to enable the shell integration for the specified shell. You can add it to your shell config as documented in [installation](#installation). If you installed portman via Homebrew, fish shell is integration is automatically installed and you don't need to modify your fish shell config file.
 
 ### `portman create [project-name] [--no-activate|-A] [--no-link|-N] [--overwrite]`
 

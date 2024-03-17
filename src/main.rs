@@ -7,7 +7,6 @@ mod cli;
 mod config;
 mod dependencies;
 mod error;
-mod init;
 #[cfg(test)]
 mod mocks;
 mod registry;
@@ -17,7 +16,6 @@ use crate::caddy::{generate_caddyfile, reload};
 use crate::cli::{Cli, Config as ConfigSubcommand, InitShell};
 use crate::config::Config;
 use crate::error::Result;
-use crate::init::init_fish;
 use crate::registry::Registry;
 use anyhow::Context;
 use clap::Parser;
@@ -167,11 +165,13 @@ fn run(
 ) -> Result<String> {
     let mut output = String::new();
     match cli {
-        Cli::Init { shell } => match shell {
-            InitShell::Fish => {
-                writeln!(output, "{}", init_fish()).unwrap();
+        Cli::Init { shell } => {
+            output += match shell {
+                InitShell::Bash => include_str!("./shells/init.bash"),
+                InitShell::Fish => include_str!("./shells/init.fish"),
+                InitShell::Zsh => include_str!("./shells/init.zsh"),
             }
-        },
+        }
 
         Cli::Config(subcommand) => match subcommand {
             ConfigSubcommand::Show => {

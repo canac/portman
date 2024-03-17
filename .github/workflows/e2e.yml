@@ -1,10 +1,17 @@
-name: End to end tests
+name: End-to-end tests
 on: [push, pull_request]
 
 jobs:
   test:
-    name: Test
+    name: E2E (${{ matrix.shell }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shell: bash
+          - shell: fish
+          - shell: zsh
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -15,4 +22,7 @@ jobs:
         with:
           command: install
           args: --path .
-      - run: eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" && ./e2e/setup.sh && ./e2e/test_fish.fish
+      - run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          ./e2e/setup.sh
+          ./e2e/test_${{ matrix.shell }}.${{ matrix.shell }}
