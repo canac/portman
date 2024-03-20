@@ -13,15 +13,9 @@ jobs:
           - shell: fish
           - shell: zsh
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-      - uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path .
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install --path .
       - run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           ./e2e/setup.sh
