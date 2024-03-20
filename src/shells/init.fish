@@ -24,8 +24,6 @@ function __portman_prompt_hook --on-event fish_prompt
 end
 
 function __portman_preexec_hook --on-event fish_preexec
-    # Without clearing the cd hook, the cd hook and prompt hook would both sync the port
+    # Without clearing the cd hook, the cd hook and prompt hook would both sync the environment
     functions -e __portman_cd_hook
 end
-
-__portman_prompt_hook

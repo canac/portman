@@ -1,6 +1,8 @@
 #!/usr/bin/env fish
 
 portman init fish | source
+__portman_prompt_hook
+
 # Test shell integration setting port
 test -n $PORT || return 1
 test 4000 = $PORTMAN_LINKED_PORT || return 1

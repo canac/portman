@@ -22,5 +22,3 @@ portman() {
 autoload -Uz add-zsh-hook
 add-zsh-hook chpwd __portman_sync_env
 add-zsh-hook precmd __portman_sync_env
-
-__portman_sync_env

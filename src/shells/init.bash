@@ -24,5 +24,3 @@ if [[ -z "$PROMPT_COMMAND" ]]; then
 elif [[ "$PROMPT_COMMAND" != *"__portman_sync_env"* ]]; then
     PROMPT_COMMAND="__portman_sync_env;$PROMPT_COMMAND"
 fi
-
-__portman_sync_env
