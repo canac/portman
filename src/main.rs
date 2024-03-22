@@ -433,6 +433,10 @@ fn run_and_suggest(
             output +=
                 "Try running `brew install caddy` or making sure that caddy is in your PATH.\n";
         }
+        ApplicationError::Caddy(CaddyError::Exec(ExecError::Failed { code: 1, .. })) => {
+            output +=
+                "Try running `brew services start caddy` to make sure that caddy is running.\n";
+        }
         ApplicationError::DuplicateDirectory(name, _) => {
             writeln!(output, "Try running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.").unwrap();
         }
@@ -522,9 +526,9 @@ mod tests {
         ExecMock
             .each_call(matching!((command, _) if command.get_program() == "git"))
             .answers(|_| {
-                Ok(ExecStatus {
-                    success: false,
+                Ok(ExecStatus::Failure {
                     output: String::from("No repo\n"),
+                    code: 1,
                 })
             })
             .once()
@@ -637,7 +641,7 @@ mod tests {
             output,
             r#"Editor command could not be run:
 
-Command "editor /data/config.toml" failed:
+Command "editor /data/config.toml" failed to run:
 entity not found
 Try setting the $EDITOR environment variable to a valid command like vi or nano.
 "#
@@ -653,9 +657,9 @@ Try setting the $EDITOR environment variable to a valid command like vi or nano.
             ExecMock
                 .each_call(matching!((command, _) if command.get_program() == "editor"))
                 .answers(|_| {
-                    Ok(ExecStatus {
-                        success: false,
+                    Ok(ExecStatus::Failure {
                         output: String::from("Invalid config\n"),
+                        code: 1,
                     })
                 })
                 .once(),
@@ -666,7 +670,7 @@ Try setting the $EDITOR environment variable to a valid command like vi or nano.
             output,
             r#"Editor command could not be run:
 
-Command "editor /data/config.toml" failed with output:
+Command "editor /data/config.toml" failed with exit code 1 and output:
 Invalid config
 
 "#
@@ -993,9 +997,9 @@ Try providing the --overwrite flag to modify the existing project.
             ExecMock
                 .each_call(matching!((command, _) if command.get_program() == "caddy"))
                 .answers(|_| {
-                    Ok(ExecStatus {
-                        success: false,
-                        output: String::from("Invalid Caddyfile\n"),
+                    Ok(ExecStatus::Failure {
+                        output: String::from("caddy is not running\n"),
+                        code: 1,
                     })
                 })
                 .once(),
@@ -1006,9 +1010,10 @@ Try providing the --overwrite flag to modify the existing project.
         assert_eq!(
             output,
             r#"Error reloading caddy:
-Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed with output:
-Invalid Caddyfile
+Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed with exit code 1 and output:
+caddy is not running
 
+Try running `brew services start caddy` to make sure that caddy is running.
 "#
         );
     }
@@ -1032,7 +1037,7 @@ Invalid Caddyfile
         assert_eq!(
             output,
             r#"Error reloading caddy:
-Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed:
+Command "caddy reload --adapter caddyfile --config /homebrew/etc/Caddyfile" failed to run:
 entity not found
 Try running `brew install caddy` or making sure that caddy is in your PATH.
 "#
@@ -1321,7 +1326,7 @@ app3 :3003 (/projects/app3)
             output,
             r#"Git command could not be run:
 
-Command "git remote get-url origin" failed with output:
+Command "git remote get-url origin" failed with exit code 1 and output:
 No repo
 
 Try running `portman link` in a directory with a git repo or providing an explicit port.

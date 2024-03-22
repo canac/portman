@@ -38,9 +38,10 @@ pub fn read_var(_deps: &impl std::any::Any, var: &str) -> Result<String> {
     std::env::var(var_name).with_context(|| format!("Failed to read ${var} environment variable"))
 }
 
-pub struct ExecStatus {
-    pub success: bool,
-    pub output: String,
+pub enum ExecStatus {
+    Success { output: String },
+    Failure { output: String, code: i32 },
+    Termination { output: String },
 }
 
 // The second unused arg is a workaround so that we can match against command in mocks
@@ -52,15 +53,19 @@ fn low_level_exec(
     _: &mut (),
 ) -> std::io::Result<ExecStatus> {
     command.output().map(|output| {
-        let success = output.status.success();
-        ExecStatus {
-            success,
-            output: String::from_utf8_lossy(&if success {
-                output.stdout
-            } else {
-                output.stderr
-            })
-            .to_string(),
+        let status = output.status;
+        let output = String::from_utf8_lossy(&if status.success() {
+            output.stdout
+        } else {
+            output.stderr
+        })
+        .to_string();
+        if status.success() {
+            ExecStatus::Success { output }
+        } else if let Some(code) = status.code() {
+            ExecStatus::Failure { output, code }
+        } else {
+            ExecStatus::Termination { output }
         }
     })
 }
@@ -85,13 +90,18 @@ impl<T: LowLevelExec> Exec for T {
                 command: format_command(command),
                 io_err,
             })?;
-        if status.success {
-            return Ok(status.output);
+        match status {
+            ExecStatus::Success { output } => Ok(output),
+            ExecStatus::Failure { output, code } => Err(ExecError::Failed {
+                command: format_command(command),
+                code,
+                output,
+            }),
+            ExecStatus::Termination { output } => Err(ExecError::Terminated {
+                command: format_command(command),
+                output,
+            }),
         }
-        Err(ExecError::Failed {
-            command: format_command(command),
-            output: status.output,
-        })
     }
 }
 

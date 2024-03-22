@@ -14,10 +14,17 @@ pub type CaddyResult<T> = std::result::Result<T, CaddyError>;
 
 #[derive(Debug, Error)]
 pub enum ExecError {
-    #[error("Command \"{}\" failed with output:\n{output}", command.to_string_lossy())]
-    Failed { command: OsString, output: String },
+    #[error("Command \"{}\" failed with exit code {code} and output:\n{output}", command.to_string_lossy())]
+    Failed {
+        command: OsString,
+        code: i32,
+        output: String,
+    },
 
-    #[error("Command \"{}\" failed:\n{io_err}", command.to_string_lossy())]
+    #[error("Command \"{}\" was terminated with output:\n{output}", command.to_string_lossy())]
+    Terminated { command: OsString, output: String },
+
+    #[error("Command \"{}\" failed to run:\n{io_err}", command.to_string_lossy())]
     IO {
         command: OsString,
         io_err: std::io::Error,

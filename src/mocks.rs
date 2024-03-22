@@ -43,10 +43,7 @@ pub fn exec_mock() -> impl Clause {
     ExecMock
         .each_call(matching!((command, _) if command.get_program() == "caddy" || command.get_program() == "editor"))
         .answers(|_| {
-            Ok(ExecStatus {
-                success: true,
-                output: String::new(),
-            })
+            Ok(ExecStatus::Success { output: String::new() })
         })
         .at_least_times(1)
 }
@@ -56,8 +53,7 @@ pub fn exec_git_mock(project: &str) -> impl Clause {
     ExecMock
         .each_call(matching!((command, _) if command.get_program() == "git"))
         .answers(move |_| {
-            Ok(ExecStatus {
-                success: true,
+            Ok(ExecStatus::Success {
                 output: format!("{repo}\n"),
             })
         })
