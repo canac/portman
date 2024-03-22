@@ -585,8 +585,24 @@ mod tests {
     }
 
     #[test]
+    fn test_config_init_bash() {
+        let mocked_deps = Unimock::new(args_mock("portman init bash"));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert!(!output.is_empty());
+    }
+
+    #[test]
     fn test_config_init_fish() {
         let mocked_deps = Unimock::new(args_mock("portman init fish"));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_config_init_zsh() {
+        let mocked_deps = Unimock::new(args_mock("portman init zsh"));
 
         let output = run_and_suggest(&mocked_deps).1;
         assert!(!output.is_empty());
