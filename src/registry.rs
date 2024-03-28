@@ -403,7 +403,7 @@ pub mod tests {
     fn read_caddyfile_mock() -> impl Clause {
         ReadFileMock
             .each_call(matching!((path) if path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-            .answers(|_| Err(Error::from(ErrorKind::NotFound)))
+            .answers(&|_, _| Err(Error::from(ErrorKind::NotFound)))
             .once()
     }
 
@@ -530,7 +530,7 @@ linked_port = 3000",
             data_dir_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-                .answers(|_| Err(Error::from(ErrorKind::PermissionDenied)))
+                .answers(&|_, _| Err(Error::from(ErrorKind::PermissionDenied)))
                 .once(),
             read_var_mock(),
             write_file_mock(),
@@ -547,11 +547,11 @@ linked_port = 3000",
             data_dir_mock(),
             dependencies::WriteFileMock
                 .each_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml")))
-                .answers(|_| Ok(()))
+                .answers(&|_, _, _| Ok(()))
                 .once(),
             dependencies::WriteFileMock
                 .each_call(matching!((path, _) if path == &PathBuf::from("/data/Caddyfile")))
-                .answers(|_| bail!("Error writing"))
+                .answers(&|_, _, _| bail!("Error writing"))
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();
@@ -568,13 +568,13 @@ linked_port = 3000",
             read_var_mock(),
             dependencies::WriteFileMock
                 .each_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml") || path == &PathBuf::from("/data/Caddyfile")))
-                .answers(|_| Ok(()))
+                .answers(&|_, _, _| Ok(()))
                 .n_times(2),
             dependencies::WriteFileMock
                 .each_call(
                     matching!((path, _) if path == &PathBuf::from("/homebrew/etc/Caddyfile")),
                 )
-                .answers(|_| bail!("Error writing"))
+                .answers(&|_, _, _| bail!("Error writing"))
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();
@@ -591,8 +591,8 @@ linked_port = 3000",
             read_var_mock(),
             write_file_mock(),
             dependencies::ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "caddy"))
-                .answers(|_| Err(Error::from(ErrorKind::NotFound)))
+                .each_call(matching!((command) if command.get_program() == "caddy"))
+                .answers(&|_, _| Err(Error::from(ErrorKind::NotFound)))
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();

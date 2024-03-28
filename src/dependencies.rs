@@ -1,3 +1,5 @@
+#![allow(clippy::ignored_unit_patterns)]
+
 use crate::error::{ExecError, ExecResult};
 use anyhow::{Context, Result};
 use entrait::entrait;
@@ -45,12 +47,10 @@ pub enum ExecStatus {
 }
 
 // The second unused arg is a workaround so that we can match against command in mocks
-// https://github.com/audunhalland/unimock/issues/40
 #[entrait(pub LowLevelExec, mock_api=ExecMock)]
 fn low_level_exec(
     _deps: &impl std::any::Any,
     command: &mut Command,
-    _: &mut (),
 ) -> std::io::Result<ExecStatus> {
     command.output().map(|output| {
         let status = output.status;
@@ -85,7 +85,7 @@ fn format_command(command: &Command) -> OsString {
 impl<T: LowLevelExec> Exec for T {
     fn exec(&self, command: &mut Command) -> ExecResult<String> {
         let status = self
-            .low_level_exec(command, &mut ())
+            .low_level_exec(command)
             .map_err(|io_err| ExecError::IO {
                 command: format_command(command),
                 io_err,

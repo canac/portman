@@ -162,9 +162,9 @@ dependencies = [
 
 [[package]]
 name = "entrait"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220efc4fabe61a83c32f1d62e16362104d80d02bb0a2ceb4e84066be41dba882"
+checksum = "35eab39704ad75b0f92ad5f317e310b8b637979351396867ab54fd48b87d1b8f"
 dependencies = [
  "entrait_macros",
  "implementation",
@@ -173,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "entrait_macros"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20243f8621e46212fcee494d732f4b9eb785f5b8b8c086bdec1489814ddaa8ac"
+checksum = "c84b20c5ce108353544e72ae792154cb4ba8bb0b11337c7df2baef5352d26f39"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -212,6 +212,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
+name = "higher-kinded-types"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "561985554c8b8d4808605c90a5f1979cc6c31a5d20b78465cd59501233c6678e"
+dependencies = [
+ "never-say-never",
+]
+
+[[package]]
 name = "implementation"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -240,6 +249,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
+name = "never-say-never"
+version = "6.6.666"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf5a574dadd7941adeaa71823ecba5e28331b8313fb2e1c6a5c7e5981ea53ad6"
+
+[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -253,9 +268,13 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "polonius-the-crab"
-version = "0.3.1"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0119ad75060c93b2017796396280ab9c1870738bf3b66a8cb20deb3c9075426"
+checksum = "96d9b0ba45e2c294fcd0795bc51e45c12746758e9954bb1190f97603ec9a3e91"
+dependencies = [
+ "higher-kinded-types",
+ "never-say-never",
+]
 
 [[package]]
 name = "portman"
@@ -472,9 +491,9 @@ checksum = "e5464a87b239f13a63a501f2701565754bae92d243d4bb7eb12f6d57d2269bf4"
 
 [[package]]
 name = "unimock"
-version = "0.5.8"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60037e09e4f37a8cd9ca89d80087f00fb05e0a16be56fbcb7b1e4a5e1a7f96bc"
+checksum = "3b95e52786fe322fa71e77bb2d0bde90b5f0387059cf5038a02038086076eb9c"
 dependencies = [
  "once_cell",
  "polonius-the-crab",
@@ -484,9 +503,9 @@ dependencies = [
 
 [[package]]
 name = "unimock_macros"
-version = "0.5.8"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "effccfa1b87aa82833dc7d7d2a3e8b05000797f0590b29f5bd001d2e0c0382e4"
+checksum = "312a66d8ef86ab02df8fc3df626f2fe276285a0c3f1f725b2d006905610de306"
 dependencies = [
  "proc-macro2",
  "quote",

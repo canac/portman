@@ -524,8 +524,8 @@ mod tests {
 
     fn exec_git_no_repo_mock() -> impl Clause {
         ExecMock
-            .each_call(matching!((command, _) if command.get_program() == "git"))
-            .answers(|_| {
+            .each_call(matching!((command) if command.get_program() == "git"))
+            .answers(&|_, _| {
                 Ok(ExecStatus::Failure {
                     output: String::from("No repo\n"),
                     code: 1,
@@ -537,7 +537,7 @@ mod tests {
     fn read_file_mock() -> impl Clause {
         ReadFileMock
             .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml") || path == &PathBuf::from("/homebrew/etc/Caddyfile")))
-            .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
+            .answers(&|_, _| Err(Error::from(std::io::ErrorKind::NotFound)))
             .at_least_times(1)
     }
 
@@ -628,11 +628,11 @@ mod tests {
             data_dir_mock(),
             EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
-                .answers(|_| bail!("Failed"))
+                .answers(&|_, _| bail!("Failed"))
                 .once(),
             EnvironmentMock
                 .each_call(matching!("EDITOR"))
-                .answers(|_| bail!("Failed"))
+                .answers(&|_, _| bail!("Failed"))
                 .once(),
         ));
 
@@ -647,8 +647,8 @@ mod tests {
             data_dir_mock(),
             read_var_mock(),
             ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "editor"))
-                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
+                .each_call(matching!((command) if command.get_program() == "editor"))
+                .answers(&|_, _| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
         ));
 
@@ -671,8 +671,8 @@ Try setting the $EDITOR environment variable to a valid command like vi or nano.
             data_dir_mock(),
             read_var_mock(),
             ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "editor"))
-                .answers(|_| {
+                .each_call(matching!((command) if command.get_program() == "editor"))
+                .answers(&|_, _| {
                     Ok(ExecStatus::Failure {
                         output: String::from("Invalid config\n"),
                         code: 1,
@@ -722,7 +722,7 @@ Allowed port ranges: 3000-3999
             read_var_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
-                .answers(|_| Ok(include_str!("fixtures/custom_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_string()))
                 .once(),
         ));
 
@@ -746,11 +746,11 @@ Reserved ports: 2002, 4004
             data_dir_mock(),
             EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
-                .answers(|_| Ok("/data/custom_config.toml".to_string()))
+                .answers(&|_, _| Ok("/data/custom_config.toml".to_string()))
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
-                .answers(|_| Ok(include_str!("fixtures/custom_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_string()))
                 .once(),
         ));
 
@@ -773,11 +773,11 @@ Reserved ports: 2002, 4004
             args_mock("portman config show"),
             EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
-                .answers(|_| Ok("/data/custom_config.toml".to_string()))
+                .answers(&|_, _| Ok("/data/custom_config.toml".to_string()))
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
-                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
+                .answers(&|_, _| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
         ));
 
@@ -1011,8 +1011,8 @@ Try providing the --overwrite flag to modify the existing project.
             cwd_mock("project"),
             exec_git_mock("project"),
             ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "caddy"))
-                .answers(|_| {
+                .each_call(matching!((command) if command.get_program() == "caddy"))
+                .answers(&|_, _| {
                     Ok(ExecStatus::Failure {
                         output: String::from("caddy is not running\n"),
                         code: 1,
@@ -1043,8 +1043,8 @@ Try running `brew services start caddy` to make sure that caddy is running.
             cwd_mock("project"),
             exec_git_mock("project"),
             ExecMock
-                .each_call(matching!((command, _) if command.get_program() == "caddy"))
-                .answers(|_| Err(Error::from(std::io::ErrorKind::NotFound)))
+                .each_call(matching!((command) if command.get_program() == "caddy"))
+                .answers(&|_, _| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
             write_file_mock(),
         ));
@@ -1087,7 +1087,7 @@ Try running `portman config edit` to edit the config file and modify the `ranges
             read_var_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
-                .answers(|_| Ok(include_str!("fixtures/invalid_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/invalid_config.toml").to_string()))
                 .once(),
         ));
 

@@ -107,7 +107,7 @@ mod tests {
         let deps = Unimock::new(
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
-                .answers(|_| Ok(String::from("ranges = [[3000, 3999]]\nreserved = []")))
+                .answers(&|_, _| Ok(String::from("ranges = [[3000, 3999]]\nreserved = []")))
                 .once(),
         );
 
@@ -123,7 +123,7 @@ mod tests {
         let deps = Unimock::new(
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
-                .answers(|_| Err(Error::from(ErrorKind::NotFound)))
+                .answers(&|_, _| Err(Error::from(ErrorKind::NotFound)))
                 .once(),
         );
 
@@ -136,7 +136,7 @@ mod tests {
         let deps = Unimock::new(
             dependencies::ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("config.toml")))
-                .answers(|_| Err(Error::from(ErrorKind::PermissionDenied)))
+                .answers(&|_, _| Err(Error::from(ErrorKind::PermissionDenied)))
                 .once(),
         );
 
