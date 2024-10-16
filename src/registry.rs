@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Clone, Deserialize, Serialize)]
-#[cfg_attr(test, derive(Debug, PartialEq))]
+#[cfg_attr(test, derive(Debug, Eq, PartialEq))]
 pub struct Project {
     pub port: u16,
     pub directory: Option<PathBuf>,
@@ -339,8 +339,7 @@ impl Registry {
                     result.push(char.to_ascii_lowercase());
                 }
                 result
-            })
-            .to_string();
+            });
         normalized.truncate(63);
         if normalized.ends_with('-') {
             normalized.pop();

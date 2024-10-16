@@ -10,7 +10,7 @@ pub struct PortAllocator {
 impl PortAllocator {
     // Create a new port allocator that allocates from the provided available ports
     pub fn new(available_ports: impl Iterator<Item = u16>) -> Self {
-        PortAllocator {
+        Self {
             available_ports: available_ports.collect(),
         }
     }

@@ -177,7 +177,7 @@ pub fn reload(
     deps.exec(
         std::process::Command::new("caddy")
             .args(["reload", "--adapter", "caddyfile", "--config"])
-            .arg(caddyfile_path.clone()),
+            .arg(caddyfile_path),
     )
     .map_err(CaddyError::Exec)?;
 

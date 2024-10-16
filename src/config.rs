@@ -41,7 +41,7 @@ impl Config {
 
     // Return a new configuration from a TOML string
     fn from_toml(toml_str: &str) -> anyhow::Result<Self> {
-        let config: Config = toml::from_str(toml_str)?;
+        let config: Self = toml::from_str(toml_str)?;
 
         if config.ranges.is_empty() {
             bail!("Validation error: port ranges must not be empty\n")

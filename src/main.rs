@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic)]
+#![warn(clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
 mod allocator;
@@ -205,13 +205,15 @@ fn run(
             extended,
         } => {
             let registry = load_registry(deps)?;
-            let (name, project) = match project_name {
-                Some(ref name) => registry
-                    .get(name)
-                    .map(|project| (name, project))
-                    .ok_or_else(|| ApplicationError::NonExistentProject(name.clone())),
-                None => get_active_project(deps, &registry),
-            }?;
+            let (name, project) = project_name.as_ref().map_or_else(
+                || get_active_project(deps, &registry),
+                |name| {
+                    registry
+                        .get(name)
+                        .map(|project| (name, project))
+                        .ok_or_else(|| ApplicationError::NonExistentProject(name.clone()))
+                },
+            )?;
             if extended {
                 let directory = project
                     .directory
