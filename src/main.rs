@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::str_to_string, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
 mod allocator;
@@ -45,7 +45,7 @@ fn get_active_project<'registry>(
 // Find and return a reference to the active project based on the current directory
 fn get_active_repo(deps: &impl Exec) -> Result<String> {
     deps.exec(Command::new("git").args(["remote", "get-url", "origin"]))
-        .map(|repo| repo.trim_end().to_string())
+        .map(|repo| repo.trim_end().to_owned())
         .map_err(ApplicationError::GitCommand)
 }
 
@@ -724,7 +724,7 @@ Allowed port ranges: 3000-3999
             read_var_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
-                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_owned()))
                 .once(),
         ));
 
@@ -748,11 +748,11 @@ Reserved ports: 2002, 4004
             data_dir_mock(),
             EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
-                .answers(&|_, _| Ok("/data/custom_config.toml".to_string()))
+                .answers(&|_, _| Ok("/data/custom_config.toml".to_owned()))
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
-                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/custom_config.toml").to_owned()))
                 .once(),
         ));
 
@@ -775,7 +775,7 @@ Reserved ports: 2002, 4004
             args_mock("portman config show"),
             EnvironmentMock
                 .each_call(matching!("PORTMAN_CONFIG"))
-                .answers(&|_, _| Ok("/data/custom_config.toml".to_string()))
+                .answers(&|_, _| Ok("/data/custom_config.toml".to_owned()))
                 .at_least_times(1),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/custom_config.toml")))
@@ -1089,7 +1089,7 @@ Try running `portman config edit` to edit the config file and modify the `ranges
             read_var_mock(),
             ReadFileMock
                 .each_call(matching!((path) if path == &PathBuf::from("/data/config.toml")))
-                .answers(&|_, _| Ok(include_str!("fixtures/invalid_config.toml").to_string()))
+                .answers(&|_, _| Ok(include_str!("fixtures/invalid_config.toml").to_owned()))
                 .once(),
         ));
 

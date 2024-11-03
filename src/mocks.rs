@@ -64,7 +64,7 @@ pub fn exec_git_mock(project: &str) -> impl Clause {
 pub fn read_registry_mock(contents: Option<&str>) -> impl Clause {
     let result = contents
         .unwrap_or(include_str!("fixtures/registry.toml"))
-        .to_string();
+        .to_owned();
     ReadFileMock
         .each_call(matching!((path) if path == &PathBuf::from("/data/registry.toml")))
         .answers_arc(Arc::new(move |_, _| Ok(result.clone())))
@@ -105,7 +105,7 @@ pub fn write_caddyfile_mock() -> impl Clause {
 
 pub fn write_registry_mock(expected_contents: &'static str) -> impl Clause {
     WriteFileMock
-        .each_call(matching!((path, contents) if path == &PathBuf::from("/data/registry.toml") && contents == &expected_contents.to_string()))
+        .each_call(matching!((path, contents) if path == &PathBuf::from("/data/registry.toml") && contents == &expected_contents.to_owned()))
         .answers(&|_, _, _| Ok(()))
         .at_least_times(1)
 }

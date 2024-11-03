@@ -150,7 +150,7 @@ impl Registry {
         Self::validate_name(name)?;
 
         if self.projects.contains_key(name) {
-            return Err(ApplicationError::DuplicateProject(name.to_string()));
+            return Err(ApplicationError::DuplicateProject(name.to_owned()));
         }
 
         if let Some(directory) = directory.as_ref() {
@@ -176,7 +176,7 @@ impl Registry {
             directory,
             linked_port: None,
         };
-        self.projects.insert(name.to_string(), new_project.clone());
+        self.projects.insert(name.to_owned(), new_project.clone());
 
         if let Some(port) = linked_port {
             self.link(deps, name, port)?;
@@ -286,7 +286,7 @@ impl Registry {
         self.repos
             .get(repo)
             .copied()
-            .ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_string()))
+            .ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_owned()))
     }
 
     // Get the port associated with a repo
@@ -302,7 +302,7 @@ impl Registry {
         if deleted_repo.is_some() {
             self.dirty = true;
         }
-        deleted_repo.ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_string()))
+        deleted_repo.ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_owned()))
     }
 
     // Delete a repo's port association
@@ -874,7 +874,7 @@ linked_port = 3000",
     fn test_set_repo_port() {
         let mut registry = get_mocked_registry().unwrap();
         let repo = "https://github.com/user/project.git";
-        registry.set_repo_port(repo.to_string(), 3005);
+        registry.set_repo_port(repo.to_owned(), 3005);
         assert!(registry.dirty);
         assert_eq!(registry.repos.get(repo).unwrap(), &3005);
     }
@@ -883,7 +883,7 @@ linked_port = 3000",
     fn test_set_repo_port_existing() {
         let mut registry = get_mocked_registry().unwrap();
         let repo = "https://github.com/user/app3.git";
-        registry.set_repo_port(repo.to_string(), 3004);
+        registry.set_repo_port(repo.to_owned(), 3004);
         assert!(!registry.dirty);
         assert_eq!(registry.repos.get(repo).unwrap(), &3004);
     }
