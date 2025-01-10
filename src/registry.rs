@@ -313,12 +313,9 @@ impl Registry {
     // Find and return the project that matches the current working directory, if any
     pub fn match_cwd(&self, deps: &impl WorkingDirectory) -> Result<Option<(&String, &Project)>> {
         let cwd = deps.get_cwd()?;
-        Ok(self.iter_projects().find(|(_, project)| {
-            project
-                .directory
-                .as_ref()
-                .map_or(false, |directory| directory == &cwd)
-        }))
+        Ok(self
+            .iter_projects()
+            .find(|(_, project)| project.directory.as_ref() == Some(&cwd)))
     }
 
     // Normalize a potential project name by stripping out invalid characters
