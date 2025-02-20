@@ -6,7 +6,7 @@ use entrait::entrait;
 use rand::prelude::*;
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
-use std::io::{stdout, IsTerminal};
+use std::io::{IsTerminal, stdout};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

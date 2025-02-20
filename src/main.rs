@@ -150,16 +150,18 @@ fn load_registry(deps: &(impl ChoosePort + DataDir + Environment + ReadFile)) ->
 
 #[allow(clippy::too_many_lines)]
 fn run(
-    deps: &(impl Args
-          + CheckPath
-          + ChoosePort
-          + DataDir
-          + Environment
-          + Exec
-          + ReadFile
-          + Tty
-          + WriteFile
-          + WorkingDirectory),
+    deps: &(
+         impl Args
+         + CheckPath
+         + ChoosePort
+         + DataDir
+         + Environment
+         + Exec
+         + ReadFile
+         + Tty
+         + WriteFile
+         + WorkingDirectory
+     ),
     cli: Cli,
 ) -> Result<String> {
     let mut output = String::new();
@@ -393,16 +395,18 @@ enum RunStatus {
 }
 
 fn run_and_suggest(
-    deps: &(impl Args
-          + CheckPath
-          + ChoosePort
-          + DataDir
-          + Environment
-          + Exec
-          + ReadFile
-          + Tty
-          + WriteFile
-          + WorkingDirectory),
+    deps: &(
+         impl Args
+         + CheckPath
+         + ChoosePort
+         + DataDir
+         + Environment
+         + Exec
+         + ReadFile
+         + Tty
+         + WriteFile
+         + WorkingDirectory
+     ),
 ) -> (RunStatus, String) {
     let cli = Cli::parse_from(deps.get_args());
 
@@ -474,7 +478,7 @@ fn run_and_suggest(
             writeln!(output, "Try creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.", path.display()).unwrap();
         }
         ApplicationError::NoActiveProject => {
-            output+= "Try running the command again in a directory containing a project or providing an explicit project name.\n";
+            output += "Try running the command again in a directory containing a project or providing an explicit project name.\n";
         }
         ApplicationError::NonExistentProject(_) => {
             output += "Try providing a different project name.\n";
@@ -521,7 +525,7 @@ mod tests {
     };
     use anyhow::bail;
     use std::io::Error;
-    use unimock::{matching, Clause, MockFn, Unimock};
+    use unimock::{Clause, MockFn, Unimock, matching};
 
     fn exec_git_no_repo_mock() -> impl Clause {
         ExecMock

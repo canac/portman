@@ -213,14 +213,16 @@ mod tests {
     #[test]
     fn test_update_import_already_present() {
         let deps = Unimock::new(data_dir_mock());
-        assert!(update_import(
-            &deps,
-            Some(String::from(
-                "import \"/data/Caddyfile\"\n# Other content\n"
-            ))
-        )
-        .unwrap()
-        .is_none());
+        assert!(
+            update_import(
+                &deps,
+                Some(String::from(
+                    "import \"/data/Caddyfile\"\n# Other content\n"
+                ))
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[test]

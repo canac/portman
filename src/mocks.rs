@@ -9,7 +9,7 @@ use crate::registry::Registry;
 use anyhow::bail;
 use std::path::PathBuf;
 use std::sync::Arc;
-use unimock::{matching, Clause, MockFn, Unimock};
+use unimock::{Clause, MockFn, Unimock, matching};
 
 pub fn args_mock(args: &str) -> impl Clause {
     ArgsMock

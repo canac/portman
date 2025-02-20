@@ -394,7 +394,7 @@ pub mod tests {
     };
     use anyhow::bail;
     use std::io::{Error, ErrorKind};
-    use unimock::{matching, Clause, MockFn, Unimock};
+    use unimock::{Clause, MockFn, Unimock, matching};
 
     fn read_caddyfile_mock() -> impl Clause {
         ReadFileMock

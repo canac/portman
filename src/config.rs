@@ -48,7 +48,9 @@ impl Config {
         }
         for (start, end) in &config.ranges {
             if start >= end {
-                bail!("Validation error at port range ({start}-{end}), start must be less than range end\n")
+                bail!(
+                    "Validation error at port range ({start}-{end}), start must be less than range end\n"
+                )
             }
         }
 
@@ -100,7 +102,7 @@ mod tests {
         io::{Error, ErrorKind},
         path::PathBuf,
     };
-    use unimock::{matching, MockFn, Unimock};
+    use unimock::{MockFn, Unimock, matching};
 
     #[test]
     fn test_load_config() {
