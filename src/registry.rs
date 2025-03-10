@@ -36,7 +36,7 @@ impl Registry {
     // Create a new registry
     pub fn new(
         deps: &(impl ChoosePort + DataDir + Environment + ReadFile),
-        port_allocator: PortAllocator,
+        mut allocator: PortAllocator,
     ) -> Result<Self> {
         let store_path = deps.get_data_dir()?.join(PathBuf::from("registry.toml"));
         let registry_data = deps
@@ -53,8 +53,6 @@ impl Registry {
             .transpose()?
             .unwrap_or_default();
 
-        let mut allocator = port_allocator;
-        let mut linked_ports = HashSet::new();
         for project in registry_data.projects.values() {
             if let Some(linked_port) = project.linked_port {
                 // Prevent projects from using this port
@@ -63,6 +61,7 @@ impl Registry {
         }
 
         let mut dirty = false;
+        let mut linked_ports = HashSet::new();
         let mut directories: HashSet<PathBuf> = HashSet::new();
 
         // Validate all ports in the registry against the config and regenerate
