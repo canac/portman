@@ -311,11 +311,27 @@ impl Registry {
     }
 
     // Find and return the project that matches the current working directory, if any
+    // If the current working directory is a subdirectory of one or more projects, the closest
+    // project is returned
     pub fn match_cwd(&self, deps: &impl WorkingDirectory) -> Result<Option<(&String, &Project)>> {
         let cwd = deps.get_cwd()?;
         Ok(self
             .iter_projects()
-            .find(|(_, project)| project.directory.as_ref() == Some(&cwd)))
+            // Projects at or above the current working directory are match candidates
+            .filter(|(_, project)| {
+                project
+                    .directory
+                    .as_ref()
+                    .is_some_and(|directory| cwd.starts_with(directory))
+            })
+            // The project with the deepest directory is the best match
+            .max_by_key(|(_, project)| {
+                project
+                    .directory
+                    .as_ref()
+                    .map(|directory| directory.components().count())
+                    .unwrap_or_default()
+            }))
     }
 
     // Normalize a potential project name by stripping out invalid characters
@@ -387,7 +403,7 @@ impl Registry {
 pub mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::dependencies::{self, ReadFileMock};
+    use crate::dependencies::{self, ReadFileMock, WorkingDirectoryMock};
     use crate::mocks::{
         choose_port_mock, cwd_mock, data_dir_mock, get_mocked_registry, read_registry_mock,
         read_var_mock, write_file_mock,
@@ -906,6 +922,28 @@ linked_port = 3000",
     fn test_match_cwd_dir() {
         let mocked_deps = Unimock::new(cwd_mock("app3"));
         let registry = get_mocked_registry().unwrap();
+        assert_eq!(registry.match_cwd(&mocked_deps).unwrap().unwrap().0, "app3");
+    }
+
+    #[test]
+    fn test_match_cwd_dir_subdirectory() {
+        let mocked_deps = Unimock::new((
+            choose_port_mock(),
+            WorkingDirectoryMock
+                .each_call(matching!())
+                .answers(&|_| Ok(PathBuf::from("/projects/app3/subdir")))
+                .once(),
+        ));
+
+        let mut registry = get_mocked_registry().unwrap();
+        registry
+            .create(
+                &mocked_deps,
+                "projects",
+                Some(PathBuf::from("/projects")),
+                None,
+            )
+            .unwrap();
         assert_eq!(registry.match_cwd(&mocked_deps).unwrap().unwrap().0, "app3");
     }
 

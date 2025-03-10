@@ -4,8 +4,11 @@ portman init fish | source
 __portman_prompt_hook
 
 # Test shell integration setting port
+cd src # Test inside a subdirectory
 test -n $PORT || return 1
 test 4000 = $PORTMAN_LINKED_PORT || return 1
+test portman = $PORTMAN_PROJECT || return 1
+cd .. # Test inside the project directory
 test portman = $PORTMAN_PROJECT || return 1
 MESSAGE=portman python3 e2e/echo_server.py &
 set server_pid $last_pid

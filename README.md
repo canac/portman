@@ -102,7 +102,7 @@ portman provides a simple web server for graphically viewing all of your project
 
 ## Activation
 
-When you create a project, portman remembers the current working directory and associates it with the project. Later when you `cd` to that directory again, portman activates the project by setting the `$PORT` environment variable to the project's port. Note that the shell integration must be enabled for portman to be able to detect changes to the current directory. During activation portman also sets `$PORTMAN_PROJECT` to the name of the active project and sets `$PORTMAN_LINKED_PORT` to the port linked to the active project if there is one.
+When you create a project, portman remembers the current working directory and associates it with the project. Later when you `cd` to that directory or one of its subdirectories, portman activates the project by setting the `$PORT` environment variable to the project's port. Note that the shell integration must be enabled for portman to be able to detect changes to the current directory. During activation portman also sets `$PORTMAN_PROJECT` to the name of the active project and sets `$PORTMAN_LINKED_PORT` to the port linked to the active project if there is one.
 
 To create a project without tying it to a specific directory, use the `--no-activate` flag. The project will not be linked to the current directory and therefore cannot be automatically activated. You must also manually provide a name for the project.
 

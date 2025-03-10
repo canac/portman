@@ -5,8 +5,11 @@ eval "$(portman init zsh)"
 __portman_sync_env
 
 # Test shell integration setting port
+cd src # Test inside a subdirectory
 test -n "$PORT"
 test 4000 = "$PORTMAN_LINKED_PORT"
+test portman = "$PORTMAN_PROJECT"
+cd .. # Test inside the project directory
 test portman = "$PORTMAN_PROJECT"
 MESSAGE=portman python3 e2e/echo_server.py &
 server_pid=$!
