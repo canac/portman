@@ -1,4 +1,5 @@
 #![warn(clippy::str_to_string, clippy::pedantic, clippy::nursery)]
+#![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 mod allocator;
 mod caddy;
@@ -497,19 +498,19 @@ fn run_and_suggest(
     (RunStatus::Failure, output)
 }
 
-fn main() -> ExitCode {
+fn main() -> std::io::Result<ExitCode> {
     let deps = Impl::new(());
     let (status, output) = run_and_suggest(&deps);
-    match status {
+    Ok(match status {
         RunStatus::Success => {
-            std::io::stdout().write_all(output.as_bytes()).unwrap();
+            std::io::stdout().write_all(output.as_bytes())?;
             ExitCode::SUCCESS
         }
         RunStatus::Failure => {
-            std::io::stderr().write_all(output.as_bytes()).unwrap();
+            std::io::stderr().write_all(output.as_bytes())?;
             ExitCode::FAILURE
         }
-    }
+    })
 }
 
 #[cfg(test)]
