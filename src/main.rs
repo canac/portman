@@ -356,7 +356,7 @@ fn run(
                     writeln!(output, "Unlinked port {port} from project {project_name}").unwrap();
                 }
                 None => writeln!(output, "Port {port} was not linked to a project").unwrap(),
-            };
+            }
         }
 
         Cli::Repo(subcommand) => match subcommand {
@@ -385,7 +385,7 @@ fn run(
             reload(deps, &registry).map_err(ApplicationError::Caddy)?;
             writeln!(output, "Successfully reloaded caddy").unwrap();
         }
-    };
+    }
 
     Ok(output)
 }
@@ -493,7 +493,7 @@ fn run_and_suggest(
             }
         }
         _ => {}
-    };
+    }
 
     (RunStatus::Failure, output)
 }

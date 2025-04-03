@@ -57,7 +57,7 @@ impl Registry {
             if let Some(linked_port) = project.linked_port {
                 // Prevent projects from using this port
                 allocator.discard(linked_port);
-            };
+            }
         }
 
         let mut dirty = false;
