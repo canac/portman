@@ -74,18 +74,18 @@ impl Registry {
 
                 let mut old_project = old_project;
 
-                if let Some(linked_port) = old_project.linked_port {
-                    if !linked_ports.insert(linked_port) {
-                        old_project.linked_port = None;
-                        dirty = true;
-                    }
+                if let Some(linked_port) = old_project.linked_port
+                    && !linked_ports.insert(linked_port)
+                {
+                    old_project.linked_port = None;
+                    dirty = true;
                 }
 
-                if let Some(directory) = old_project.directory.as_ref() {
-                    if !directories.insert(directory.clone()) {
-                        old_project.directory = None;
-                        dirty = true;
-                    }
+                if let Some(directory) = old_project.directory.as_ref()
+                    && !directories.insert(directory.clone())
+                {
+                    old_project.directory = None;
+                    dirty = true;
                 }
 
                 let existing_port = old_project.port;
@@ -152,17 +152,16 @@ impl Registry {
             return Err(ApplicationError::DuplicateProject(name.to_owned()));
         }
 
-        if let Some(directory) = directory.as_ref() {
-            if let Some((name, _)) = self
+        if let Some(directory) = directory.as_ref()
+            && let Some((name, _)) = self
                 .projects
                 .iter()
                 .find(|(_, project)| project.directory.as_ref() == Some(directory))
-            {
-                return Err(ApplicationError::DuplicateDirectory(
-                    name.clone(),
-                    directory.clone(),
-                ));
-            }
+        {
+            return Err(ApplicationError::DuplicateDirectory(
+                name.clone(),
+                directory.clone(),
+            ));
         }
 
         if let Some(port) = linked_port {
