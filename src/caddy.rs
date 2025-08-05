@@ -115,20 +115,33 @@ pub fn generate_caddyfile(deps: &impl DataDir, registry: &Registry) -> Result<St
         .fold(String::new(), |mut output, (name, project)| {
             let _ = write!(
                 output,
-                "\n{name}.localhost {{\n\treverse_proxy localhost:{}\n}}\n",
+                "
+{name}.localhost {{
+\treverse_proxy localhost:{}
+}}
+",
                 project.port
             );
             if let Some(linked_port) = project.linked_port {
                 let _ = write!(
                     output,
-                    "\nhttp://localhost:{linked_port} {{\n\treverse_proxy localhost:{}\n}}\n",
+                    "
+http://localhost:{linked_port} {{
+\treverse_proxy localhost:{}
+}}
+",
                     project.port
                 );
             }
             output
         });
     Ok(format!(
-        "localhost {{\n\tfile_server {{\n\t\troot \"{}\"\n\t}}\n}}\n{projects}",
+        "localhost {{
+\tfile_server {{
+\t\troot \"{}\"
+\t}}
+}}
+{projects}",
         gallery_www_path(deps)?.display()
     ))
 }
