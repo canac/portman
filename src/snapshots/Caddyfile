@@ -6,16 +6,28 @@ localhost {
 
 app1.localhost {
 	reverse_proxy localhost:3001
+	handle_errors 502 {
+		respond "Could not connect to project app1. Ensure that the server is running on port 3001." 502
+	}
 }
 
 app2.localhost {
 	reverse_proxy localhost:3002
+	handle_errors 502 {
+		respond "Could not connect to project app2. Ensure that the server is running on port 3002." 502
+	}
 }
 
 http://localhost:3000 {
 	reverse_proxy localhost:3002
+	handle_errors 502 {
+		respond "Could not connect to project app2. Ensure that the server is running on port 3002." 502
+	}
 }
 
 app3.localhost {
 	reverse_proxy localhost:3003
+	handle_errors 502 {
+		respond "Could not connect to project app3. Ensure that the server is running on port 3003." 502
+	}
 }

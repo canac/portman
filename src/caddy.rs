@@ -113,11 +113,18 @@ pub fn generate_caddyfile(deps: &impl DataDir, registry: &Registry) -> Result<St
     let projects = registry
         .iter_projects()
         .fold(String::new(), |mut output, (name, project)| {
+            let handle_errors = format!(
+                "\thandle_errors 502 {{
+\t\trespond \"Could not connect to project {name}. Ensure that the server is running on port {}.\" 502
+\t}}",
+                project.port
+            );
             let _ = write!(
                 output,
                 "
 {name}.localhost {{
 \treverse_proxy localhost:{}
+{handle_errors}
 }}
 ",
                 project.port
@@ -128,6 +135,7 @@ pub fn generate_caddyfile(deps: &impl DataDir, registry: &Registry) -> Result<St
                     "
 http://localhost:{linked_port} {{
 \treverse_proxy localhost:{}
+{handle_errors}
 }}
 ",
                     project.port
