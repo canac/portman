@@ -180,23 +180,21 @@ fn run(
                 let config_path = get_config_path(deps)?.0;
                 let config = load_config(deps)?;
                 let registry_path = deps.get_data_dir()?.join(PathBuf::from("registry.toml"));
-                writeln!(
+                let _ = writeln!(
                     output,
                     "Config path: {}\nRegistry path: {}\nConfiguration:\n--------------\n{config}",
                     config_path.display(),
                     registry_path.display()
-                )
-                .unwrap();
+                );
             }
             ConfigSubcommand::Edit => {
                 let config_path = get_config_path(deps)?.0;
                 let editor = deps.read_var("EDITOR")?;
-                writeln!(
+                let _ = writeln!(
                     output,
                     "Opening \"{}\" with \"{editor}\"",
                     config_path.display()
-                )
-                .unwrap();
+                );
                 deps.exec(Command::new(editor).arg(config_path))
                     .map_err(ApplicationError::EditorCommand)?;
             }
@@ -227,17 +225,20 @@ fn run(
                     .map(|port| port.to_string())
                     .unwrap_or_default();
                 if deps.is_tty() {
-                    write!(output, "port: {}\nname: {name}\ndirectory: {directory}\nlinked port: {linked_port}\n", project.port).unwrap();
+                    let _ = write!(
+                        output,
+                        "port: {}\nname: {name}\ndirectory: {directory}\nlinked port: {linked_port}\n",
+                        project.port
+                    );
                 } else {
-                    write!(
+                    let _ = write!(
                         output,
                         "{}\n{name}\n{directory}\n{linked_port}\n",
                         project.port
-                    )
-                    .unwrap();
+                    );
                 }
             } else {
-                writeln!(output, "{}", project.port).unwrap();
+                let _ = writeln!(output, "{}", project.port);
             }
         }
 
@@ -266,16 +267,15 @@ fn run(
 
             registry.save(deps)?;
             if deps.is_tty() {
-                writeln!(
+                let _ = writeln!(
                     output,
                     "{} project {}",
                     if updated { "Updated" } else { "Created" },
                     format_project(&name, &project)
-                )
-                .unwrap();
+                );
             } else {
                 // Only print the port if stdout isn't a TTY for easier scripting
-                writeln!(output, "{}", project.port).unwrap();
+                let _ = writeln!(output, "{}", project.port);
             }
         }
 
@@ -287,29 +287,27 @@ fn run(
             };
             let project = registry.delete(&project_name)?;
             registry.save(deps)?;
-            writeln!(
+            let _ = writeln!(
                 output,
                 "Deleted project {}",
                 format_project(&project_name, &project),
-            )
-            .unwrap();
+            );
         }
 
         Cli::Cleanup => {
             let mut registry = load_registry(deps)?;
             let deleted_projects = cleanup(deps, &mut registry)?;
             registry.save(deps)?;
-            writeln!(
+            let _ = writeln!(
                 output,
                 "Deleted {}",
                 match deleted_projects.len() {
                     1 => String::from("1 project"),
                     count => format!("{count} projects"),
                 }
-            )
-            .unwrap();
+            );
             for (name, project) in deleted_projects {
-                writeln!(output, "{}", format_project(&name, &project)).unwrap();
+                let _ = writeln!(output, "{}", format_project(&name, &project));
             }
         }
 
@@ -317,7 +315,7 @@ fn run(
             let registry = load_registry(deps)?;
             registry.save(deps)?;
             for (name, project) in registry.iter_projects() {
-                writeln!(output, "{}", format_project(name, project)).unwrap();
+                let _ = writeln!(output, "{}", format_project(name, project));
             }
         }
 
@@ -337,12 +335,10 @@ fn run(
                 None => registry.get_repo_port(&get_active_repo(deps)?)?,
             };
             registry.link(deps, &project_name, port)?;
-            writeln!(output, "Linked port {port} to project {project_name}").unwrap();
-            if save_repo {
-                if let Ok(repo) = get_active_repo(deps) {
-                    writeln!(output, "Saved default port {port} for repo {repo}").unwrap();
-                    registry.set_repo_port(repo, port);
-                }
+            let _ = writeln!(output, "Linked port {port} to project {project_name}");
+            if save_repo && let Ok(repo) = get_active_repo(deps) {
+                let _ = writeln!(output, "Saved default port {port} for repo {repo}");
+                registry.set_repo_port(repo, port);
             }
             registry.save(deps)?;
         }
@@ -353,9 +349,11 @@ fn run(
             registry.save(deps)?;
             match unlinked_port {
                 Some(project_name) => {
-                    writeln!(output, "Unlinked port {port} from project {project_name}").unwrap();
+                    let _ = writeln!(output, "Unlinked port {port} from project {project_name}");
                 }
-                None => writeln!(output, "Port {port} was not linked to a project").unwrap(),
+                None => {
+                    let _ = writeln!(output, "Port {port} was not linked to a project");
+                }
             }
         }
 
@@ -363,27 +361,27 @@ fn run(
             Repo::Delete { repo } => {
                 let mut registry = load_registry(deps)?;
                 let port = registry.delete_repo(&repo)?;
-                writeln!(output, "Deleted repo {}", format_repo(&repo, port)).unwrap();
+                let _ = writeln!(output, "Deleted repo {}", format_repo(&repo, port));
                 registry.save(deps)?;
             }
 
             Repo::List => {
                 let registry = load_registry(deps)?;
                 for (repo, port) in registry.iter_repos() {
-                    writeln!(output, "{}", format_repo(repo, *port)).unwrap();
+                    let _ = writeln!(output, "{}", format_repo(repo, *port));
                 }
             }
         },
 
         Cli::Caddyfile => {
             let registry = load_registry(deps)?;
-            write!(output, "{}", generate_caddyfile(deps, &registry)?).unwrap();
+            let _ = write!(output, "{}", generate_caddyfile(deps, &registry)?);
         }
 
         Cli::ReloadCaddy => {
             let registry = load_registry(deps)?;
             reload(deps, &registry).map_err(ApplicationError::Caddy)?;
-            writeln!(output, "Successfully reloaded caddy").unwrap();
+            let _ = writeln!(output, "Successfully reloaded caddy");
         }
     }
 
@@ -444,7 +442,10 @@ fn run_and_suggest(
                 "Try running `brew services start caddy` to make sure that caddy is running.\n";
         }
         ApplicationError::DuplicateDirectory(name, _) => {
-            writeln!(output, "Try running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command.").unwrap();
+            let _ = writeln!(
+                output,
+                "Try running the command in a different directory, providing the --no-activate flag, or running `portman delete {name}` and rerunning the command."
+            );
         }
         ApplicationError::DuplicateProject(_) => {
             if let Some(has_project_name) = has_create_project_name {
@@ -476,7 +477,11 @@ fn run_and_suggest(
             }
         }
         ApplicationError::MissingCustomConfig(path) => {
-            writeln!(output, "Try creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.", path.display()).unwrap();
+            let _ = writeln!(
+                output,
+                "Try creating a config file at \"{}\" or unsetting the $PORTMAN_CONFIG environment variable.",
+                path.display()
+            );
         }
         ApplicationError::NoActiveProject => {
             output += "Try running the command again in a directory containing a project or providing an explicit project name.\n";
