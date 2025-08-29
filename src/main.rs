@@ -484,7 +484,7 @@ fn run_and_suggest(
             );
         }
         ApplicationError::NoActiveProject => {
-            output += "Try running the command again in a directory containing a project or providing an explicit project name.\n";
+            output += "Try running `portman create` to create a new project, running the command again in a directory containing a project, or providing an explicit project name.\n";
         }
         ApplicationError::NonExistentProject(_) => {
             output += "Try providing a different project name.\n";
@@ -1258,7 +1258,7 @@ Try manually providing a project name.
         assert_eq!(
             output,
             r"The current directory does not contain a project
-Try running the command again in a directory containing a project or providing an explicit project name.
+Try running `portman create` to create a new project, running the command again in a directory containing a project, or providing an explicit project name.
 "
         );
     }
