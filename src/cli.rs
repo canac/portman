@@ -23,8 +23,8 @@ pub enum Config {
 pub enum Repo {
     /// Delete a repo and its associated port
     Delete {
-        /// The repo to delete
-        repo: String,
+        /// The repo to delete (defaults to the current directory's repo)
+        repo: Option<String>,
     },
 
     /// List all repos and their associated ports

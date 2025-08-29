@@ -213,9 +213,9 @@ Links a project to the specified port. `port` defaults to the port associated wi
 
 Unlinks the port from the project it was linked to.
 
-### `portman repo delete <repo>`
+### `portman repo delete [repo]`
 
-Deletes the repo and its associated port.
+Deletes the repo and its associated port. `repo` defaults to the active project's git repo.
 
 ### `portman repo list`
 

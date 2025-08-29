@@ -360,6 +360,7 @@ fn run(
         Cli::Repo(subcommand) => match subcommand {
             Repo::Delete { repo } => {
                 let mut registry = load_registry(deps)?;
+                let repo = repo.map_or_else(|| get_active_repo(deps), Ok)?;
                 let port = registry.delete_repo(&repo)?;
                 let _ = writeln!(output, "Deleted repo {}", format_repo(&repo, port));
                 registry.save(deps)?;
@@ -419,7 +420,7 @@ fn run_and_suggest(
     };
 
     let linking_project = matches!(cli, Cli::Link { .. });
-    let deleting_repo = matches!(cli, Cli::Repo(Repo::Delete { .. }));
+    let deleting_repo = matches!(cli, Cli::Repo(Repo::Delete { repo: Some(_) }));
 
     let err = match run(deps, cli) {
         Err(err) => err,
@@ -1485,6 +1486,37 @@ Saved default port 3005 for repo https://github.com/user/app3.git
         assert_eq!(
             output,
             "Deleted repo https://github.com/user/app3.git: 3004\n"
+        );
+    }
+
+    #[test]
+    fn test_repo_delete_default() {
+        let mocked_deps = Unimock::new((
+            readwrite_mocks(),
+            args_mock("portman repo delete"),
+            exec_git_mock("app3"),
+            write_registry_mock(include_str!("snapshots/repo_delete.toml")),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "Deleted repo https://github.com/user/app3.git: 3004\n"
+        );
+    }
+
+    #[test]
+    fn test_repo_delete_default_non_existent() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman repo delete"),
+            exec_git_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "Repo https://github.com/user/project.git does not exist\n"
         );
     }
 
