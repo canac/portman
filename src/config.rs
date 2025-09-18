@@ -61,7 +61,7 @@ impl Config {
     pub fn get_valid_ports(&self) -> impl Iterator<Item = u16> + '_ {
         self.ranges
             .iter()
-            .flat_map(|(start, end)| (*start..=*end))
+            .flat_map(|(start, end)| *start..=*end)
             .filter(|port| !self.reserved.contains(port))
     }
 }
