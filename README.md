@@ -181,7 +181,7 @@ Prints CLI usage information.
 
 Prints portman version.
 
-### `portman init [bash|bash|zsh]`
+### `portman init [bash|fish|zsh]`
 
 Prints the shell configuration command to enable the shell integration for the specified shell. You can add it to your shell config as documented in [installation](#installation). If you installed portman via Homebrew, fish shell is integration is automatically installed and you don't need to modify your fish shell config file.
 
