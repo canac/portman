@@ -1,11 +1,12 @@
 __portman_sync_env() {
-    unset PORT PORTMAN_PROJECT PORTMAN_LINKED_PORT
+    unset PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT
     lines=$(command portman get --extended 2> /dev/null || true)
     if [[ -n "$lines" ]]; then
         PORT=$(echo "$lines" | awk 'NR==1')
         PORTMAN_PROJECT=$(echo "$lines" | awk 'NR==2')
+        PORTMAN_ORIGIN="https://$PORTMAN_PROJECT.localhost"
         PORTMAN_LINKED_PORT=$(echo "$lines" | awk 'NR==4')
-        export PORT PORTMAN_PROJECT
+        export PORT PORTMAN_PROJECT PORTMAN_ORIGIN
         if [[ -n "$PORTMAN_LINKED_PORT" ]]; then
             export PORTMAN_LINKED_PORT
         fi

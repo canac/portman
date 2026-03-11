@@ -9,6 +9,7 @@ cd src # Test inside a subdirectory
 test -n "$PORT"
 test 4000 = "$PORTMAN_LINKED_PORT"
 test portman = "$PORTMAN_PROJECT"
+test https://portman.localhost = "$PORTMAN_ORIGIN"
 cd .. # Test inside the project directory
 test portman = "$PORTMAN_PROJECT"
 MESSAGE=portman python3 e2e/echo_server.py &
@@ -25,6 +26,7 @@ $PROMPT_COMMAND
 test -n "$PORT"
 test -z "$PORTMAN_LINKED_PORT"
 test portman2 = "$PORTMAN_PROJECT"
+test https://portman2.localhost = "$PORTMAN_ORIGIN"
 MESSAGE=portman2 python3 e2e/echo_server.py &
 server2_pid=$!
 sleep 1
@@ -36,5 +38,6 @@ $PROMPT_COMMAND
 test -z "$PORT"
 test -z "$PORTMAN_LINKED_PORT"
 test -z "$PORTMAN_PROJECT"
+test -z "$PORTMAN_ORIGIN"
 
 kill $server_pid $server2_pid

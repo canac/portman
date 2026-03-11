@@ -8,6 +8,7 @@ cd src # Test inside a subdirectory
 test -n $PORT || return 1
 test 4000 = $PORTMAN_LINKED_PORT || return 1
 test portman = $PORTMAN_PROJECT || return 1
+test https://portman.localhost = $PORTMAN_ORIGIN || return 1
 cd .. # Test inside the project directory
 test portman = $PORTMAN_PROJECT || return 1
 MESSAGE=portman python3 e2e/echo_server.py &
@@ -23,6 +24,7 @@ cd ../portman2
 test -n $PORT || return 1
 test -z $PORTMAN_LINKED_PORT || return 1
 test portman2 = $PORTMAN_PROJECT || return 1
+test https://portman2.localhost = $PORTMAN_ORIGIN || return 1
 MESSAGE=portman2 python3 e2e/echo_server.py &
 set server2_pid $last_pid
 sleep 1
@@ -33,5 +35,6 @@ cd ..
 test -z $PORT || return 1
 test -z $PORTMAN_LINKED_PORT || return 1
 test -z $PORTMAN_PROJECT || return 1
+test -z $PORTMAN_ORIGIN || return 1
 
 kill $server_pid $server2_pid
