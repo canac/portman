@@ -22,7 +22,7 @@ fn path_exists(_deps: &impl std::any::Any, path: &Path) -> bool {
 
 #[entrait(pub ChoosePort, mock_api=ChoosePortMock)]
 fn choose_port(_deps: &impl std::any::Any, available_ports: &HashSet<u16>) -> Option<u16> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     available_ports.iter().choose(&mut rng).copied()
 }
 
