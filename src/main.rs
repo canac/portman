@@ -175,6 +175,45 @@ fn run(
             }
         }
 
+        Cli::Env { shell } => {
+            let project = load_registry(deps).ok().and_then(|registry| {
+                let (name, project) = registry.match_cwd(deps).ok()??;
+                Some((name.clone(), project.clone()))
+            });
+
+            match shell {
+                InitShell::Bash | InitShell::Zsh => {
+                    if let Some((name, project)) = project {
+                        let _ = writeln!(output, "export PORT={}", project.port);
+                        let _ = writeln!(output, "export PORTMAN_PROJECT={name}");
+                        let _ = writeln!(output, "export PORTMAN_ORIGIN=https://{name}.localhost");
+                        if let Some(linked_port) = project.linked_port {
+                            let _ = writeln!(output, "export PORTMAN_LINKED_PORT={linked_port}");
+                        } else {
+                            output += "unset PORTMAN_LINKED_PORT\n";
+                        }
+                    } else {
+                        output += "unset PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT\n";
+                    }
+                }
+                InitShell::Fish => {
+                    if let Some((name, project)) = project {
+                        let _ = writeln!(output, "set -gx PORT {}", project.port);
+                        let _ = writeln!(output, "set -gx PORTMAN_PROJECT {name}");
+                        let _ = writeln!(output, "set -gx PORTMAN_ORIGIN https://{name}.localhost");
+                        if let Some(linked_port) = project.linked_port {
+                            let _ = writeln!(output, "set -gx PORTMAN_LINKED_PORT {linked_port}");
+                        } else {
+                            output += "set -e PORTMAN_LINKED_PORT\n";
+                        }
+                    } else {
+                        output +=
+                            "set -e PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT\n";
+                    }
+                }
+            }
+        }
+
         Cli::Config(subcommand) => match subcommand {
             ConfigSubcommand::Show => {
                 let config_path = get_config_path(deps)?.0;
@@ -717,7 +756,7 @@ Invalid config
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Config path: /data/config.toml
+            "Config path: /data/config.toml
 Registry path: /data/registry.toml
 Configuration:
 --------------
@@ -741,7 +780,7 @@ Allowed port ranges: 3000-3999
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Config path: /data/config.toml
+            "Config path: /data/config.toml
 Registry path: /data/registry.toml
 Configuration:
 --------------
@@ -769,7 +808,7 @@ Reserved ports: 2002, 4004
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Config path: /data/custom_config.toml
+            "Config path: /data/custom_config.toml
 Registry path: /data/registry.toml
 Configuration:
 --------------
@@ -826,7 +865,7 @@ Try creating a config file at "/data/custom_config.toml" or unsetting the $PORTM
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Project project does not exist
+            "Project project does not exist
 Try providing a different project name.
 "
         );
@@ -860,11 +899,179 @@ Try providing a different project name.
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"3003
+            "3003
 app3
 /projects/app3
 
 "
+        );
+    }
+
+    #[test]
+    fn test_env_bash() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env bash"),
+            cwd_mock("app3"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "export PORT=3003
+export PORTMAN_PROJECT=app3
+export PORTMAN_ORIGIN=https://app3.localhost
+unset PORTMAN_LINKED_PORT
+"
+        );
+    }
+
+    #[test]
+    fn test_env_bash_linked_port() {
+        let mocked_deps = Unimock::new((
+            data_dir_mock(),
+            read_registry_mock(Some(include_str!("fixtures/linked_port_registry.toml"))),
+            read_file_mock(),
+            read_var_mock(),
+            args_mock("portman env bash"),
+            cwd_mock("app4"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "export PORT=3004
+export PORTMAN_PROJECT=app4
+export PORTMAN_ORIGIN=https://app4.localhost
+export PORTMAN_LINKED_PORT=3000
+"
+        );
+    }
+
+    #[test]
+    fn test_env_bash_no_project() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env bash"),
+            cwd_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "unset PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT\n"
+        );
+    }
+
+    #[test]
+    fn test_env_fish() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env fish"),
+            cwd_mock("app3"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "set -gx PORT 3003
+set -gx PORTMAN_PROJECT app3
+set -gx PORTMAN_ORIGIN https://app3.localhost
+set -e PORTMAN_LINKED_PORT
+"
+        );
+    }
+
+    #[test]
+    fn test_env_fish_linked_port() {
+        let mocked_deps = Unimock::new((
+            data_dir_mock(),
+            read_registry_mock(Some(include_str!("fixtures/linked_port_registry.toml"))),
+            read_file_mock(),
+            read_var_mock(),
+            args_mock("portman env fish"),
+            cwd_mock("app4"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "set -gx PORT 3004
+set -gx PORTMAN_PROJECT app4
+set -gx PORTMAN_ORIGIN https://app4.localhost
+set -gx PORTMAN_LINKED_PORT 3000
+"
+        );
+    }
+
+    #[test]
+    fn test_env_fish_no_project() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env fish"),
+            cwd_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "set -e PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT\n"
+        );
+    }
+
+    #[test]
+    fn test_env_zsh() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env zsh"),
+            cwd_mock("app3"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "export PORT=3003
+export PORTMAN_PROJECT=app3
+export PORTMAN_ORIGIN=https://app3.localhost
+unset PORTMAN_LINKED_PORT
+"
+        );
+    }
+
+    #[test]
+    fn test_env_zsh_linked_port() {
+        let mocked_deps = Unimock::new((
+            data_dir_mock(),
+            read_registry_mock(Some(include_str!("fixtures/linked_port_registry.toml"))),
+            read_file_mock(),
+            read_var_mock(),
+            args_mock("portman env zsh"),
+            cwd_mock("app4"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "export PORT=3004
+export PORTMAN_PROJECT=app4
+export PORTMAN_ORIGIN=https://app4.localhost
+export PORTMAN_LINKED_PORT=3000
+"
+        );
+    }
+
+    #[test]
+    fn test_env_zsh_no_project() {
+        let mocked_deps = Unimock::new((
+            readonly_mocks(),
+            args_mock("portman env zsh"),
+            cwd_mock("project"),
+        ));
+
+        let output = run_and_suggest(&mocked_deps).1;
+        assert_eq!(
+            output,
+            "unset PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT\n"
         );
     }
 
@@ -933,7 +1140,7 @@ Try running the command in a different directory, providing the --no-activate fl
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"A project already has the name app3
+            "A project already has the name app3
 Try manually providing a project name.
 "
         );
@@ -951,7 +1158,7 @@ Try manually providing a project name.
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"A project already has the name app3
+            "A project already has the name app3
 Try providing the --overwrite flag to modify the existing project.
 "
         );
@@ -1085,7 +1292,7 @@ Try running `brew install caddy` or making sure that caddy is in your PATH.
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"All available ports have been allocated already
+            "All available ports have been allocated already
 Try running `portman config edit` to edit the config file and modify the `ranges` field to allow more ports.
 "
         );
@@ -1106,7 +1313,7 @@ Try running `portman config edit` to edit the config file and modify the `ranges
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Configuration is invalid:
+            "Configuration is invalid:
 
 Validation error: port ranges must not be empty
 
@@ -1258,7 +1465,7 @@ Try manually providing a project name.
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"The current directory does not contain a project
+            "The current directory does not contain a project
 Try running `portman create` to create a new project, running the command again in a directory containing a project, or providing an explicit project name.
 "
         );
@@ -1291,7 +1498,7 @@ Try running `portman create` to create a new project, running the command again 
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Deleted 1 project
+            "Deleted 1 project
 app3 :3003 (/projects/app3)
 "
         );
@@ -1319,7 +1526,7 @@ app3 :3003 (/projects/app3)
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"app1 :3001
+            "app1 :3001
 app2 :3002 -> :3000
 app3 :3003 (/projects/app3)
 "
@@ -1374,7 +1581,7 @@ Try running `portman link` in a directory with a git repo or providing an explic
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Repo https://github.com/user/project.git does not exist
+            "Repo https://github.com/user/project.git does not exist
 Try providing an explicit port.
 "
         );
@@ -1401,7 +1608,7 @@ Try providing an explicit port.
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Linked port 3005 to project app3
+            "Linked port 3005 to project app3
 Saved default port 3005 for repo https://github.com/user/app3.git
 "
         );
@@ -1530,7 +1737,7 @@ Saved default port 3005 for repo https://github.com/user/app3.git
         let output = run_and_suggest(&mocked_deps).1;
         assert_eq!(
             output,
-            r"Repo https://github.com/user/project.git does not exist
+            "Repo https://github.com/user/project.git does not exist
 Try running `portman repo list` to see which repos exist.
 "
         );

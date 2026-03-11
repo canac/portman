@@ -1,13 +1,5 @@
 function __portman_sync_env
-    set -e PORT PORTMAN_PROJECT PORTMAN_ORIGIN PORTMAN_LINKED_PORT
-    if set lines (command portman get --extended 2> /dev/null)
-        set -gx PORT $lines[1]
-        set -gx PORTMAN_PROJECT $lines[2]
-        set -gx PORTMAN_ORIGIN https://$PORTMAN_PROJECT.localhost
-        if test -n $lines[4]
-            set -gx PORTMAN_LINKED_PORT $lines[4]
-        end
-    end
+    command portman env fish | source
 end
 
 function portman --wrap portman

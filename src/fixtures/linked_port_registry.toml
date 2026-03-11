@@ -1,0 +1,4 @@
+[projects.app4]
+port = 3004
+directory = "/projects/app4"
+linked_port = 3000

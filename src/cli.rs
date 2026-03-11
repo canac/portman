@@ -42,6 +42,13 @@ pub enum Cli {
         shell: InitShell,
     },
 
+    /// Print the shell commands to update portman environment variables
+    Env {
+        /// Specifies the shell to use
+        #[clap(value_enum)]
+        shell: InitShell,
+    },
+
     /// Manage the configuration
     #[clap(subcommand)]
     Config(Config),
