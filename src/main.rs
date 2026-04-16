@@ -511,10 +511,8 @@ fn run_and_suggest(
         ApplicationError::InvalidConfig(_) => {
             output += "Try running `portman config edit` to edit the config file and correct the error.\n";
         }
-        ApplicationError::InvalidProjectName(_, _) => {
-            if has_create_project_name == Some(false) {
-                output += "Try manually providing a project name.\n";
-            }
+        ApplicationError::InvalidProjectName(_, _) if has_create_project_name == Some(false) => {
+            output += "Try manually providing a project name.\n";
         }
         ApplicationError::MissingCustomConfig(path) => {
             let _ = writeln!(
