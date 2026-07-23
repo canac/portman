@@ -23,13 +23,7 @@ impl PortAllocator {
     // Allocate a new port, using the desired port if it is provided and is valid
     pub fn allocate(&mut self, deps: &impl ChoosePort, desired_port: Option<u16>) -> Result<u16> {
         let allocated_port = desired_port
-            .and_then(|port| {
-                if self.available_ports.contains(&port) {
-                    Some(port)
-                } else {
-                    None
-                }
-            })
+            .filter(|&port| self.available_ports.contains(&port))
             .or_else(|| deps.choose_port(&self.available_ports));
         let Some(port) = allocated_port else {
             return Err(ApplicationError::EmptyAllocator);
