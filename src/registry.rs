@@ -778,7 +778,10 @@ linked_port = 3000",
     #[test]
     fn test_delete_many_none() {
         let mut registry = get_mocked_registry().unwrap();
-        assert!(registry.delete_many(vec![]).unwrap().is_empty());
+        assert_eq!(
+            registry.delete_many(vec![]).unwrap(),
+            [] as [(String, Project); 0]
+        );
         assert!(!registry.dirty);
     }
 

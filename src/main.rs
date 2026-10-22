@@ -638,7 +638,7 @@ mod tests {
         let mocked_deps = Unimock::new(args_mock("portman init bash"));
 
         let output = run_and_suggest(&mocked_deps).1;
-        assert!(!output.is_empty());
+        assert_ne!(output, "");
     }
 
     #[test]
@@ -646,7 +646,7 @@ mod tests {
         let mocked_deps = Unimock::new(args_mock("portman init fish"));
 
         let output = run_and_suggest(&mocked_deps).1;
-        assert!(!output.is_empty());
+        assert_ne!(output, "");
     }
 
     #[test]
@@ -654,7 +654,7 @@ mod tests {
         let mocked_deps = Unimock::new(args_mock("portman init zsh"));
 
         let output = run_and_suggest(&mocked_deps).1;
-        assert!(!output.is_empty());
+        assert_ne!(output, "");
     }
 
     #[test]
