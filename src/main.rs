@@ -229,12 +229,7 @@ fn run(
             ConfigSubcommand::Edit => {
                 let config_path = get_config_path(deps)?.0;
                 let editor = deps.read_var("EDITOR")?;
-                let _ = writeln!(
-                    output,
-                    "Opening \"{}\" with \"{editor}\"",
-                    config_path.display()
-                );
-                deps.exec(Command::new(editor).arg(config_path))
+                deps.exec_interactive(Command::new(editor).arg(config_path))
                     .map_err(ApplicationError::EditorCommand)?;
             }
         },
@@ -560,7 +555,8 @@ fn main() -> std::io::Result<ExitCode> {
 mod tests {
     use super::*;
     use crate::dependencies::{
-        CheckPathMock, ChoosePortMock, EnvironmentMock, ExecMock, ExecStatus, ReadFileMock,
+        CheckPathMock, ChoosePortMock, EnvironmentMock, ExecInteractiveMock, ExecMock, ExecStatus,
+        InteractiveExecStatus, ReadFileMock,
     };
     use crate::mocks::{
         args_mock, choose_port_mock, cwd_mock, data_dir_mock, exec_git_mock, exec_mock,
@@ -662,12 +658,15 @@ mod tests {
         let mocked_deps = Unimock::new((
             args_mock("portman config edit"),
             data_dir_mock(),
-            exec_mock(),
+            ExecInteractiveMock
+                .each_call(matching!((command) if command.get_program() == "editor"))
+                .answers(&|_, _| Ok(InteractiveExecStatus::Success))
+                .once(),
             read_var_mock(),
         ));
 
         let output = run_and_suggest(&mocked_deps).1;
-        assert_eq!(output, "Opening \"/data/config.toml\" with \"editor\"\n");
+        assert_eq!(output, "");
     }
 
     #[test]
@@ -695,7 +694,7 @@ mod tests {
             args_mock("portman config edit"),
             data_dir_mock(),
             read_var_mock(),
-            ExecMock
+            ExecInteractiveMock
                 .each_call(matching!((command) if command.get_program() == "editor"))
                 .answers(&|_, _| Err(Error::from(std::io::ErrorKind::NotFound)))
                 .once(),
@@ -719,14 +718,9 @@ Try setting the $EDITOR environment variable to a valid command like vi or nano.
             args_mock("portman config edit"),
             data_dir_mock(),
             read_var_mock(),
-            ExecMock
+            ExecInteractiveMock
                 .each_call(matching!((command) if command.get_program() == "editor"))
-                .answers(&|_, _| {
-                    Ok(ExecStatus::Failure {
-                        output: String::from("Invalid config\n"),
-                        code: 1,
-                    })
-                })
+                .answers(&|_, _| Ok(InteractiveExecStatus::Failure { code: 1 }))
                 .once(),
         ));
 
@@ -735,9 +729,7 @@ Try setting the $EDITOR environment variable to a valid command like vi or nano.
             output,
             r#"Editor command could not be run:
 
-Command "editor /data/config.toml" failed with exit code 1 and output:
-Invalid config
-
+Command "editor /data/config.toml" failed with exit code 1
 "#
         );
     }

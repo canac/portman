@@ -24,6 +24,12 @@ pub enum ExecError {
     #[error("Command \"{}\" was terminated with output:\n{output}", command.to_string_lossy())]
     Terminated { command: OsString, output: String },
 
+    #[error("Command \"{}\" failed with exit code {code}", command.to_string_lossy())]
+    InteractiveFailed { command: OsString, code: i32 },
+
+    #[error("Command \"{}\" was terminated", command.to_string_lossy())]
+    InteractiveTerminated { command: OsString },
+
     #[error("Command \"{}\" failed to run:\n{io_err}", command.to_string_lossy())]
     IO {
         command: OsString,

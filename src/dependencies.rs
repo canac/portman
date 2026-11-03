@@ -46,6 +46,12 @@ pub enum ExecStatus {
     Termination { output: String },
 }
 
+pub enum InteractiveExecStatus {
+    Success,
+    Failure { code: i32 },
+    Termination,
+}
+
 // The second unused arg is a workaround so that we can match against command in mocks
 #[entrait(pub LowLevelExec, mock_api=ExecMock)]
 fn low_level_exec(
@@ -70,8 +76,26 @@ fn low_level_exec(
     })
 }
 
+// The second unused arg mirrors the low_level_exec workaround
+#[entrait(pub LowLevelExecInteractive, mock_api=ExecInteractiveMock)]
+fn low_level_exec_interactive(
+    _deps: &impl std::any::Any,
+    command: &mut Command,
+) -> std::io::Result<InteractiveExecStatus> {
+    command.status().map(|status| {
+        if status.success() {
+            InteractiveExecStatus::Success
+        } else if let Some(code) = status.code() {
+            InteractiveExecStatus::Failure { code }
+        } else {
+            InteractiveExecStatus::Termination
+        }
+    })
+}
+
 pub trait Exec {
     fn exec(&self, command: &mut Command) -> ExecResult<String>;
+    fn exec_interactive(&self, command: &mut Command) -> ExecResult<()>;
 }
 
 // Generate a human-readable representation of the command
@@ -82,7 +106,22 @@ fn format_command(command: &Command) -> OsString {
         .join(OsStr::new(" "))
 }
 
-impl<T: LowLevelExec> Exec for T {
+fn status_to_result(command: &Command, status: ExecStatus) -> ExecResult<String> {
+    match status {
+        ExecStatus::Success { output } => Ok(output),
+        ExecStatus::Failure { output, code } => Err(ExecError::Failed {
+            command: format_command(command),
+            code,
+            output,
+        }),
+        ExecStatus::Termination { output } => Err(ExecError::Terminated {
+            command: format_command(command),
+            output,
+        }),
+    }
+}
+
+impl<T: LowLevelExec + LowLevelExecInteractive> Exec for T {
     fn exec(&self, command: &mut Command) -> ExecResult<String> {
         let status = self
             .low_level_exec(command)
@@ -90,16 +129,24 @@ impl<T: LowLevelExec> Exec for T {
                 command: format_command(command),
                 io_err,
             })?;
+        status_to_result(command, status)
+    }
+
+    fn exec_interactive(&self, command: &mut Command) -> ExecResult<()> {
+        let status = self
+            .low_level_exec_interactive(command)
+            .map_err(|io_err| ExecError::IO {
+                command: format_command(command),
+                io_err,
+            })?;
         match status {
-            ExecStatus::Success { output } => Ok(output),
-            ExecStatus::Failure { output, code } => Err(ExecError::Failed {
+            InteractiveExecStatus::Success => Ok(()),
+            InteractiveExecStatus::Failure { code } => Err(ExecError::InteractiveFailed {
                 command: format_command(command),
                 code,
-                output,
             }),
-            ExecStatus::Termination { output } => Err(ExecError::Terminated {
+            InteractiveExecStatus::Termination => Err(ExecError::InteractiveTerminated {
                 command: format_command(command),
-                output,
             }),
         }
     }
