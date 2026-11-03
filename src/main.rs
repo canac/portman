@@ -288,7 +288,7 @@ fn run(
             overwrite,
         } => {
             let mut registry = load_registry(deps)?;
-            let linked_port = if no_link {
+            let linked_port = if no_link || no_activate {
                 None
             } else {
                 get_active_repo(deps)
@@ -1381,7 +1381,6 @@ Try manually providing a project name.
             readwrite_mocks(),
             args_mock("portman create project --no-activate"),
             choose_port_mock(),
-            exec_git_mock("project"),
             tty_mock(true),
             write_registry_mock(include_str!("snapshots/create_no_activate.toml")),
         ));
