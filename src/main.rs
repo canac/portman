@@ -1673,7 +1673,7 @@ Saved default port 3005 for repo https://github.com/user/app3.git
     #[test]
     fn test_repo_delete() {
         let mocked_deps = Unimock::new((
-            readwrite_mocks(),
+            readonly_mocks(),
             args_mock("portman repo delete https://github.com/user/app3.git"),
             write_registry_mock(include_str!("snapshots/repo_delete.toml")),
         ));
@@ -1688,7 +1688,7 @@ Saved default port 3005 for repo https://github.com/user/app3.git
     #[test]
     fn test_repo_delete_default() {
         let mocked_deps = Unimock::new((
-            readwrite_mocks(),
+            readonly_mocks(),
             args_mock("portman repo delete"),
             exec_git_mock("app3"),
             write_registry_mock(include_str!("snapshots/repo_delete.toml")),

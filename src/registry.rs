@@ -23,13 +23,27 @@ pub struct RegistryData {
     pub repos: BTreeMap<String, u16>,
 }
 
+/// Unsaved changes, ordered by how much work `Registry::save` must do
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum StoreState {
+    Clean,
+    ReposDirty,
+    ProjectsDirty,
+}
+
+impl StoreState {
+    fn mark(&mut self, state: Self) {
+        *self = (*self).max(state);
+    }
+}
+
 #[cfg_attr(test, derive(Debug))]
 pub struct Registry {
     store_path: PathBuf,
     projects: BTreeMap<String, Project>,
     repos: BTreeMap<String, u16>,
     allocator: PortAllocator,
-    dirty: bool,
+    store_state: StoreState,
 }
 
 impl Registry {
@@ -108,7 +122,11 @@ impl Registry {
             projects,
             repos: registry_data.repos,
             allocator,
-            dirty,
+            store_state: if dirty {
+                StoreState::ProjectsDirty
+            } else {
+                StoreState::Clean
+            },
         };
         Ok(registry)
     }
@@ -118,7 +136,7 @@ impl Registry {
         &self,
         deps: &(impl DataDir + Environment + Exec + ReadFile + WriteFile),
     ) -> Result<()> {
-        if !self.dirty {
+        if self.store_state == StoreState::Clean {
             return Ok(());
         }
 
@@ -130,7 +148,12 @@ impl Registry {
             toml::to_string(&registry).context("Failed to serialize project registry")?;
         deps.write_file(&self.store_path, &registry_str)
             .context("Failed to save registry")?;
-        reload(deps, self).map_err(ApplicationError::Caddy)
+        // The Caddyfile and gallery derive only from the projects map, so a
+        // repos-only change does not need the caddy pipeline to run
+        if self.store_state == StoreState::ProjectsDirty {
+            reload(deps, self).map_err(ApplicationError::Caddy)?;
+        }
+        Ok(())
     }
 
     // Get a project from the registry
@@ -181,7 +204,7 @@ impl Registry {
             new_project.linked_port = Some(port);
         }
 
-        self.dirty = true;
+        self.store_state.mark(StoreState::ProjectsDirty);
 
         Ok(new_project)
     }
@@ -194,7 +217,7 @@ impl Registry {
             .ok_or_else(|| ApplicationError::NonExistentProject(String::from(name)))?;
         if project.directory != directory {
             project.directory = directory;
-            self.dirty = true;
+            self.store_state.mark(StoreState::ProjectsDirty);
         }
         Ok(project.clone())
     }
@@ -205,7 +228,7 @@ impl Registry {
             .projects
             .remove(name)
             .ok_or_else(|| ApplicationError::NonExistentProject(String::from(name)))?;
-        self.dirty = true;
+        self.store_state.mark(StoreState::ProjectsDirty);
         Ok(project)
     }
 
@@ -222,7 +245,7 @@ impl Registry {
             })
             .collect::<Result<Vec<_>>>()?;
         if !deleted_projects.is_empty() {
-            self.dirty = true;
+            self.store_state.mark(StoreState::ProjectsDirty);
         }
         Ok(deleted_projects)
     }
@@ -249,18 +272,18 @@ impl Registry {
             if project.port == linked_port {
                 // Take the port from the project so that it can be used by the linked port
                 project.port = self.allocator.allocate(deps, None)?;
-                self.dirty = true;
+                self.store_state.mark(StoreState::ProjectsDirty);
             }
             if name == project_name {
                 if project.linked_port != Some(linked_port) {
                     // Link the port to the new project
                     project.linked_port = Some(linked_port);
-                    self.dirty = true;
+                    self.store_state.mark(StoreState::ProjectsDirty);
                 }
             } else if project.linked_port == Some(linked_port) {
                 // Unlink the port from the previous project
                 project.linked_port = None;
-                self.dirty = true;
+                self.store_state.mark(StoreState::ProjectsDirty);
             }
         }
 
@@ -272,7 +295,7 @@ impl Registry {
         for (name, project) in &mut self.projects {
             if project.linked_port == Some(port) {
                 project.linked_port = None;
-                self.dirty = true;
+                self.store_state.mark(StoreState::ProjectsDirty);
                 return Some(name.clone());
             }
         }
@@ -290,7 +313,7 @@ impl Registry {
     // Get the port associated with a repo
     pub fn set_repo_port(&mut self, repo: String, port: u16) {
         if self.repos.insert(repo, port) != Some(port) {
-            self.dirty = true;
+            self.store_state.mark(StoreState::ReposDirty);
         }
     }
 
@@ -298,7 +321,7 @@ impl Registry {
     pub fn delete_repo(&mut self, repo: &str) -> Result<u16> {
         let deleted_repo = self.repos.remove(repo);
         if deleted_repo.is_some() {
-            self.dirty = true;
+            self.store_state.mark(StoreState::ReposDirty);
         }
         deleted_repo.ok_or_else(|| ApplicationError::NonExistentRepo(repo.to_owned()))
     }
@@ -425,7 +448,7 @@ pub mod tests {
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert_eq!(registry.projects.len(), 3);
         assert_eq!(registry.repos.len(), 1);
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -468,7 +491,7 @@ directory = '/projects/app'",
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert!(registry.get("app1").unwrap().directory.is_some());
         assert!(registry.get("app2").unwrap().directory.is_none());
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -490,7 +513,7 @@ linked_port = 3000",
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert!(registry.get("app1").unwrap().linked_port.is_some());
         assert!(registry.get("app2").unwrap().linked_port.is_none());
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -504,7 +527,7 @@ linked_port = 3000",
         let allocator = PortAllocator::new(config.get_valid_ports());
         let registry = Registry::new(&mocked_deps, allocator).unwrap();
         assert_eq!(registry.projects.get("app1").unwrap().port, 3000);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -523,14 +546,28 @@ linked_port = 3000",
         assert_eq!(registry.get("app1").unwrap().port, 4000);
         assert_eq!(registry.get("app2").unwrap().port, 4001);
         assert_eq!(registry.get("app3").unwrap().port, 4002);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
     fn test_save_clean() {
         let mocked_deps = Unimock::new(());
         let registry = get_mocked_registry().unwrap();
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
+        registry.save(&mocked_deps).unwrap();
+    }
+
+    #[test]
+    fn test_save_skip_reload() {
+        let mocked_deps = Unimock::new(
+            dependencies::WriteFileMock
+                .each_call(matching!((path, _) if path == &PathBuf::from("/data/registry.toml")))
+                .answers(&|_, _, _| Ok(()))
+                .once(),
+        );
+        let mut registry = get_mocked_registry().unwrap();
+        registry.set_repo_port(String::from("https://github.com/user/new.git"), 3005);
+        assert_eq!(registry.store_state, StoreState::ReposDirty);
         registry.save(&mocked_deps).unwrap();
     }
 
@@ -546,7 +583,7 @@ linked_port = 3000",
             write_file_mock(),
         ));
         let mut registry = get_mocked_registry().unwrap();
-        registry.dirty = true;
+        registry.store_state = StoreState::ProjectsDirty;
         let err = registry.save(&mocked_deps).unwrap_err();
         assert!(matches!(err, ApplicationError::Caddy(_)));
     }
@@ -565,7 +602,7 @@ linked_port = 3000",
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();
-        registry.dirty = true;
+        registry.store_state = StoreState::ProjectsDirty;
         let err = registry.save(&mocked_deps).unwrap_err();
         assert!(matches!(err, ApplicationError::Caddy(_)));
     }
@@ -588,7 +625,7 @@ linked_port = 3000",
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();
-        registry.dirty = true;
+        registry.store_state = StoreState::ProjectsDirty;
         let err = registry.save(&mocked_deps).unwrap_err();
         assert!(matches!(err, ApplicationError::Caddy(_)));
     }
@@ -606,7 +643,7 @@ linked_port = 3000",
                 .once(),
         ));
         let mut registry = get_mocked_registry().unwrap();
-        registry.dirty = true;
+        registry.store_state = StoreState::ProjectsDirty;
         let err = registry.save(&mocked_deps).unwrap_err();
         assert!(matches!(err, ApplicationError::Caddy(_)));
     }
@@ -624,7 +661,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         registry.create(&mocked_deps, "app4", None, None).unwrap();
         assert!(registry.get("app4").is_some());
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -635,7 +672,7 @@ linked_port = 3000",
             .create(&mocked_deps, "App3", None, None)
             .unwrap_err();
         assert!(matches!(err, ApplicationError::InvalidProjectName(_, _)));
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -646,7 +683,7 @@ linked_port = 3000",
             .create(&mocked_deps, "app3", None, None)
             .unwrap_err();
         assert!(matches!(err, ApplicationError::DuplicateProject(_)));
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -657,7 +694,7 @@ linked_port = 3000",
             .create(&mocked_deps, "app4", None, Some(3100))
             .unwrap();
         assert_eq!(registry.get("app4").unwrap().linked_port.unwrap(), 3100);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -668,7 +705,7 @@ linked_port = 3000",
             .create(&mocked_deps, "app4", None, Some(3001))
             .unwrap();
         assert_eq!(registry.get("app1").unwrap().port, 3005);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -680,7 +717,7 @@ linked_port = 3000",
             .unwrap();
         assert_eq!(project.port, 3005);
         assert_eq!(registry.get("app4").unwrap().port, 3005);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -697,7 +734,7 @@ linked_port = 3000",
             result,
             Err(ApplicationError::DuplicateDirectory(_, _)),
         ));
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -716,7 +753,7 @@ linked_port = 3000",
             registry.get("app2").unwrap().directory.as_ref().unwrap(),
             &path,
         );
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -735,7 +772,7 @@ linked_port = 3000",
             registry.get("app3").unwrap().directory.as_ref().unwrap(),
             &path,
         );
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -782,7 +819,7 @@ linked_port = 3000",
             registry.delete_many(vec![]).unwrap(),
             [] as [(String, Project); 0]
         );
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -791,7 +828,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3005).unwrap();
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3005);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -800,7 +837,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3100).unwrap();
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3100);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -810,7 +847,7 @@ linked_port = 3000",
         registry.link(&mocked_deps, "app3", 3000).unwrap();
         assert!(registry.get("app2").unwrap().linked_port.is_none());
         assert_eq!(registry.get("app3").unwrap().linked_port.unwrap(), 3000);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -818,7 +855,7 @@ linked_port = 3000",
         let mocked_deps = Unimock::new(());
         let mut registry = get_mocked_registry().unwrap();
         registry.link(&mocked_deps, "app2", 3000).unwrap();
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -827,7 +864,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         let err = registry.link(&mocked_deps, "app4", 3004).unwrap_err();
         assert!(matches!(err, ApplicationError::NonExistentProject(_)));
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -837,7 +874,7 @@ linked_port = 3000",
         registry.link(&mocked_deps, "app2", 3001).unwrap();
         assert_ne!(registry.get("app1").unwrap().port, 3001);
         assert_eq!(registry.get("app2").unwrap().linked_port.unwrap(), 3001);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
@@ -847,21 +884,21 @@ linked_port = 3000",
         registry.link(&mocked_deps, "app1", 3001).unwrap();
         assert_ne!(registry.get("app1").unwrap().port, 3001);
         assert_eq!(registry.get("app1").unwrap().linked_port.unwrap(), 3001);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
     fn test_unlink() {
         let mut registry = get_mocked_registry().unwrap();
         assert_eq!(registry.unlink(3000).unwrap(), String::from("app2"));
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ProjectsDirty);
     }
 
     #[test]
     fn test_unlink_not_linked() {
         let mut registry = get_mocked_registry().unwrap();
         assert!(registry.unlink(3001).is_none());
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
@@ -889,7 +926,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         let repo = "https://github.com/user/project.git";
         registry.set_repo_port(repo.to_owned(), 3005);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ReposDirty);
         assert_eq!(registry.repos.get(repo).unwrap(), &3005);
     }
 
@@ -898,7 +935,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         let repo = "https://github.com/user/app3.git";
         registry.set_repo_port(repo.to_owned(), 3004);
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
         assert_eq!(registry.repos.get(repo).unwrap(), &3004);
     }
 
@@ -907,7 +944,7 @@ linked_port = 3000",
         let mut registry = get_mocked_registry().unwrap();
         let repo = "https://github.com/user/app3.git";
         assert_eq!(registry.delete_repo(repo).unwrap(), 3004);
-        assert!(registry.dirty);
+        assert_eq!(registry.store_state, StoreState::ReposDirty);
     }
 
     #[test]
@@ -916,7 +953,7 @@ linked_port = 3000",
         let repo = "https://github.com/user/project.git";
         let err = registry.delete_repo(repo).unwrap_err();
         assert!(matches!(err, ApplicationError::NonExistentRepo(_)));
-        assert!(!registry.dirty);
+        assert_eq!(registry.store_state, StoreState::Clean);
     }
 
     #[test]
